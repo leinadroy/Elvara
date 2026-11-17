@@ -1,0 +1,13 @@
+// Skema Prisma Smart School.
+// Model domain (identitas, sekolah, orang, akademik, dst.) ditambahkan per modul
+// setelah keputusan di docs/smart_school_management_ecosystem.md bagian 11 disepakati.
+// Konvensi: UUID sebagai primary key, timestamp UTC, createdAt/updatedAt pada setiap entitas operasional.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}

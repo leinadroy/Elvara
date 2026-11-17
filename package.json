@@ -1,0 +1,37 @@
+{
+  "name": "smart-school",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Smart School — platform manajemen sekolah terpadu (monorepo).",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "packageManager": "npm@11.21.2",
+  "engines": {
+    "node": ">=22",
+    "npm": ">=11"
+  },
+  "scripts": {
+    "dev": "npm run build -w @smart-school/contracts && concurrently -n contracts,api,web -c gray,magenta,cyan \"npm run dev -w @smart-school/contracts\" \"npm run start:dev -w api\" \"npm run dev -w web\"",
+    "dev:web": "npm run dev -w web",
+    "dev:api": "npm run build -w @smart-school/contracts && npm run start:dev -w api",
+    "build": "npm run build -w @smart-school/contracts && npm run build -w api && npm run build -w web",
+    "lint": "npm run build -w @smart-school/contracts && npm run lint --workspaces --if-present",
+    "typecheck": "npm run build -w @smart-school/contracts && npm run typecheck --workspaces --if-present",
+    "test": "npm run build -w @smart-school/contracts && npm run test --workspaces --if-present",
+    "db:up": "docker compose up -d --wait postgres",
+    "db:down": "docker compose down",
+    "db:migrate": "npm run db:migrate -w api",
+    "db:studio": "npm run db:studio -w api",
+    "docs:build": "python scripts/build_consolidated_note.py",
+    "docs:infographics": "python scripts/generate_flow_infographics.py"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "allowScripts": {
+    "@prisma/engines@7.10.1": true,
+    "prisma@7.10.1": true
+  }
+}
