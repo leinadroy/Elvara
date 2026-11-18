@@ -1,6 +1,6 @@
 # Smart School
 
-Platform manajemen sekolah terpadu. Rancangan produk dan teknis ada di [`docs/`](docs/smart_school_management_ecosystem.md); catatan induknya di [`docs/smart_school_master_note.md`](docs/smart_school_master_note.md).
+Platform manajemen sekolah terpadu. Kebutuhan produk dan cakupan rilis ada di [`docs/prd.md`](docs/prd.md). Rancangan produk dan teknis ada di [`docs/`](docs/smart_school_management_ecosystem.md); catatan induknya di [`docs/smart_school_master_note.md`](docs/smart_school_master_note.md).
 
 ## Struktur
 
