@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
+/** NestJS API. Browser memanggil /api/v1/* di origin web; Next meneruskannya ke API agar cookie sesi tetap satu origin. */
+const API_URL = process.env.API_URL ?? "http://localhost:4000/api/v1";
+
 const nextConfig: NextConfig = {
-  /* config options here */
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {
@@ -11,6 +13,9 @@ const nextConfig: NextConfig = {
         as: "*.css",
       },
     },
+  },
+  async rewrites() {
+    return [{ source: "/api/v1/:path*", destination: `${API_URL}/:path*` }];
   },
 };
 

@@ -1,7 +1,7 @@
 import { HealthResponseSchema, type HealthResponse } from "@smart-school/contracts";
 
 /** Base URL NestJS API untuk pemanggilan dari server Next.js (bukan dari browser). */
-const API_URL = process.env.API_URL ?? "http://localhost:4000/api/v1";
+export const API_URL = process.env.API_URL ?? "http://localhost:4000/api/v1";
 
 export type ApiResult<T> =
   | { ok: true; data: T }

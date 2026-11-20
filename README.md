@@ -17,17 +17,25 @@ scripts/               Generator catatan induk dan infografis (Python)
 
 - Node.js 22 atau lebih baru
 - **npm 11** (npm 10 bawaan Node 22 gagal resolve dependency workspace ini). Jalankan perintah lewat `npx npm@11 …`, atau pasang sekali dengan `npm install -g npm@11`.
-- Docker Desktop untuk PostgreSQL lokal
+- **Tidak perlu Docker.** PostgreSQL lokal dijalankan oleh `prisma dev` (ikut terpasang lewat `npm install`).
 
 ## Menjalankan
 
 ```bash
 npm install
-npm run db:up                       # PostgreSQL di localhost:5432
-cp apps/api/.env.example apps/api/.env
+npm run db:up                       # 2 server PostgreSQL lokal: smart-school (dev) & smart-school-test (tes), tanpa Docker
+cp apps/api/.env.example apps/api/.env      # cocokkan URL dengan yang ditampilkan db:up
 cp apps/web/.env.example apps/web/.env.local
+npm run db:deploy -w api            # terapkan migrasi
+npm run db:seed                     # data contoh sintetis; akun contoh tercantum di apps/api/prisma/seed.ts
 npm run dev                         # contracts (watch) + API :4000 + web :3000
 ```
+
+Hentikan database dengan `npm run db:down`; lihat status dan URL-nya dengan `npm run db:status -w api`.
+
+**Masuk pertama kali:** buka http://localhost:3000/login dan pakai akun contoh dari `apps/api/prisma/seed.ts` (admin, kepala sekolah, guru, wali). Akun lain dibuat lewat tautan undangan dari halaman siswa/pegawai.
+
+**Port bentrok?** Bila port 4000 dipakai aplikasi lain, ubah `PORT` di `apps/api/.env` dan `API_URL` di `apps/web/.env.local` ke port yang sama (mis. 4100). Web meneruskan `/api/v1/*` ke `API_URL`, jadi browser cukup mengakses port 3000.
 
 - Web: http://localhost:3000
 - API: http://localhost:4000/api/v1/health
@@ -48,4 +56,4 @@ npm run dev                         # contracts (watch) + API :4000 + web :3000
 - Semua endpoint di bawah `/api/v1`.
 - Setiap respons membawa header `x-request-id`; kesalahan memakai format `{ code, message, requestId, fieldErrors? }` (`packages/contracts`).
 - Env API divalidasi saat start; aplikasi gagal start bila `DATABASE_URL` tidak valid.
-- Skema Prisma belum berisi model domain: model ditambahkan per modul setelah keputusan di dokumen rancangan bagian 11 disepakati.
+- Skema database R0 dijelaskan di [`docs/r0-data-model.md`](docs/r0-data-model.md).

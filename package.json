@@ -20,12 +20,13 @@
     "lint": "npm run build -w @smart-school/contracts && npm run lint --workspaces --if-present",
     "typecheck": "npm run build -w @smart-school/contracts && npm run typecheck --workspaces --if-present",
     "test": "npm run build -w @smart-school/contracts && npm run test --workspaces --if-present",
-    "db:up": "docker compose up -d --wait postgres",
-    "db:down": "docker compose down",
+    "db:up": "npm run db:up -w api",
+    "db:down": "npm run db:down -w api",
     "db:migrate": "npm run db:migrate -w api",
     "db:studio": "npm run db:studio -w api",
     "docs:build": "python scripts/build_consolidated_note.py",
-    "docs:infographics": "python scripts/generate_flow_infographics.py"
+    "docs:infographics": "python scripts/generate_flow_infographics.py",
+    "db:seed": "npm run db:seed -w api"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

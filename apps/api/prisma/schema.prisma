@@ -1,7 +1,7 @@
-// Skema Prisma Smart School.
-// Model domain (identitas, sekolah, orang, akademik, dst.) ditambahkan per modul
-// setelah keputusan di docs/smart_school_management_ecosystem.md bagian 11 disepakati.
+// Skema Prisma Smart School — R0 Fondasi.
 // Konvensi: UUID sebagai primary key, timestamp UTC, createdAt/updatedAt pada setiap entitas operasional.
+// Identitas login (User) terpisah dari profil orang (Person). Riwayat tidak dihapus: status dan tanggal berlaku.
+// Rujukan: docs/prd.md (E1–E3, E9) dan docs/school_administration_management.md.
 
 generator client {
   provider = "prisma-client"
@@ -10,4 +10,510 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ───────────────────────── Identitas & akses ─────────────────────────
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+/// Peran adalah kumpulan izin; peta izin per peran ada di src/auth/permissions.ts.
+enum RoleKey {
+  ADMIN
+  MANAGEMENT
+  CURRICULUM
+  TEACHER
+  STAFF
+  STUDENT
+  GUARDIAN
+}
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  /// Disimpan huruf kecil.
+  email        String     @unique
+  passwordHash String?
+  status       UserStatus @default(ACTIVE)
+  personId     String?    @unique @db.Uuid
+  person       Person?    @relation(fields: [personId], references: [id])
+  lastLoginAt  DateTime?
+  /// Rahasia TOTP terenkripsi (AES-256-GCM dengan APP_SECRET). Null = MFA belum aktif.
+  mfaSecret        String?
+  /// Rahasia yang sedang disiapkan, menunggu kode pertama yang benar.
+  mfaPendingSecret String?
+  mfaEnabledAt     DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  roles         UserRole[]
+  sessions      Session[]
+  mfaChallenges MfaChallenge[]
+
+  @@map("users")
+}
+
+/// Tahap kedua login: dibuat setelah kata sandi benar bila MFA aktif. Berlaku 5 menit, maks. 5 percobaan.
+model MfaChallenge {
+  id        String   @id @default(uuid()) @db.Uuid
+  tokenHash String   @unique
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@map("mfa_challenges")
+}
+
+model UserRole {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        RoleKey
+  schoolId    String   @db.Uuid
+  school      School   @relation(fields: [schoolId], references: [id])
+  createdAt   DateTime @default(now())
+  createdById String?  @db.Uuid
+
+  @@unique([userId, role, schoolId])
+  @@map("user_roles")
+}
+
+model Session {
+  id         String   @id @default(uuid()) @db.Uuid
+  /// SHA-256 dari token cookie; token mentah tidak pernah disimpan.
+  tokenHash  String   @unique
+  userId     String   @db.Uuid
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeRole RoleKey
+  expiresAt  DateTime
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  ip         String?
+  userAgent  String?
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+/// Undangan untuk membuat akun / menautkan wali. Token hanya diperlihatkan sekali saat dibuat.
+model Invitation {
+  id                String           @id @default(uuid()) @db.Uuid
+  schoolId          String           @db.Uuid
+  school            School           @relation(fields: [schoolId], references: [id])
+  personId          String           @db.Uuid
+  person            Person           @relation(fields: [personId], references: [id])
+  email             String
+  role              RoleKey
+  /// Diisi bila undangan memverifikasi hubungan wali–siswa.
+  studentGuardianId String?          @db.Uuid
+  studentGuardian   StudentGuardian? @relation(fields: [studentGuardianId], references: [id])
+  tokenHash         String           @unique
+  expiresAt         DateTime
+  acceptedAt        DateTime?
+  revokedAt         DateTime?
+  createdById       String?          @db.Uuid
+  createdAt         DateTime         @default(now())
+
+  @@index([personId])
+  @@map("invitations")
+}
+
+model AuditEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  schoolId    String?  @db.Uuid
+  actorUserId String?  @db.Uuid
+  /// Contoh: auth.login, student.create, guardian_link.verify, academic_year.activate
+  action      String
+  entityType  String?
+  entityId    String?
+  requestId   String?
+  ip          String?
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  @@index([schoolId, createdAt])
+  @@index([entityType, entityId])
+  @@index([actorUserId, createdAt])
+  @@map("audit_events")
+}
+
+// ───────────────────────── Sekolah ─────────────────────────
+
+model School {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  npsn      String?  @unique
+  address   String?
+  timezone  String   @default("Asia/Jakarta")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  buildings     Building[]
+  academicYears AcademicYear[]
+  people        Person[]
+  userRoles     UserRole[]
+  invitations   Invitation[]
+  importBatches ImportBatch[]
+
+  @@map("schools")
+}
+
+model Building {
+  id        String   @id @default(uuid()) @db.Uuid
+  schoolId  String   @db.Uuid
+  school    School   @relation(fields: [schoolId], references: [id])
+  code      String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  floors Floor[]
+
+  @@unique([schoolId, code])
+  @@map("buildings")
+}
+
+model Floor {
+  id         String   @id @default(uuid()) @db.Uuid
+  buildingId String   @db.Uuid
+  building   Building @relation(fields: [buildingId], references: [id])
+  /// 1 = lantai dasar.
+  level      Int
+  name       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  rooms Room[]
+
+  @@unique([buildingId, level])
+  @@map("floors")
+}
+
+enum RoomType {
+  CLASSROOM
+  LAB
+  LIBRARY
+  OFFICE
+  SPORTS
+  HALL
+  OTHER
+}
+
+model Room {
+  id         String   @id @default(uuid()) @db.Uuid
+  /// Diduplikasi dari Floor agar kode ruang bisa unik per gedung.
+  buildingId String   @db.Uuid
+  floorId    String   @db.Uuid
+  floor      Floor    @relation(fields: [floorId], references: [id])
+  code       String
+  name       String
+  type       RoomType @default(CLASSROOM)
+  capacity   Int?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([buildingId, code])
+  @@map("rooms")
+}
+
+enum AcademicYearStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+/// Hanya satu tahun ajaran ACTIVE per sekolah (partial unique index di migrasi).
+model AcademicYear {
+  id        String             @id @default(uuid()) @db.Uuid
+  schoolId  String             @db.Uuid
+  school    School             @relation(fields: [schoolId], references: [id])
+  name      String
+  startDate DateTime           @db.Date
+  endDate   DateTime           @db.Date
+  status    AcademicYearStatus @default(DRAFT)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  terms Term[]
+
+  @@unique([schoolId, name])
+  @@map("academic_years")
+}
+
+model Term {
+  id             String       @id @default(uuid()) @db.Uuid
+  academicYearId String       @db.Uuid
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  name           String
+  sequence       Int
+  startDate      DateTime     @db.Date
+  endDate        DateTime     @db.Date
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([academicYearId, sequence])
+  @@map("terms")
+}
+
+// ───────────────────────── Orang ─────────────────────────
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+model Person {
+  id          String    @id @default(uuid()) @db.Uuid
+  schoolId    String    @db.Uuid
+  school      School    @relation(fields: [schoolId], references: [id])
+  fullName    String
+  gender      Gender?
+  birthDate   DateTime? @db.Date
+  birthPlace  String?
+  phone       String?
+  email       String?
+  address     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdById String?   @db.Uuid
+  updatedById String?   @db.Uuid
+
+  user               User?
+  student            Student?
+  employee           Employee?
+  guardian           Guardian?
+  invitations        Invitation[]
+  documents          PersonDocument[]
+  correctionRequests ProfileCorrectionRequest[]
+
+  @@index([schoolId, fullName])
+  @@map("people")
+}
+
+enum DocumentCategory {
+  IDENTITY
+  FAMILY_CARD
+  BIRTH_CERTIFICATE
+  DIPLOMA
+  PHOTO
+  OTHER
+}
+
+/// Dokumen pribadi. Isi file disimpan di penyimpanan privat (storageKey), tidak pernah di URL publik.
+/// Dihapus secara lunak (deletedAt) agar jejak tetap ada; isi file ikut dihapus dari penyimpanan.
+model PersonDocument {
+  id           String           @id @default(uuid()) @db.Uuid
+  schoolId     String           @db.Uuid
+  personId     String           @db.Uuid
+  person       Person           @relation(fields: [personId], references: [id])
+  category     DocumentCategory
+  title        String
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  sha256       String
+  storageKey   String           @unique
+  uploadedById String?          @db.Uuid
+  createdAt    DateTime         @default(now())
+  deletedAt    DateTime?
+  deletedById  String?          @db.Uuid
+
+  @@index([personId, deletedAt])
+  @@map("person_documents")
+}
+
+enum CorrectionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+/// Pengajuan koreksi data diri oleh pemilik data. Data resmi baru berubah setelah disetujui petugas.
+model ProfileCorrectionRequest {
+  id            String           @id @default(uuid()) @db.Uuid
+  schoolId      String           @db.Uuid
+  personId      String           @db.Uuid
+  person        Person           @relation(fields: [personId], references: [id])
+  requestedById String           @db.Uuid
+  /// { field: { from, to } } — `from` dipakai untuk mendeteksi data yang sudah berubah sebelum ditinjau.
+  changes       Json
+  reason        String
+  status        CorrectionStatus @default(PENDING)
+  reviewedById  String?          @db.Uuid
+  reviewedAt    DateTime?
+  reviewNote    String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([schoolId, status, createdAt])
+  @@index([personId, status])
+  @@map("profile_correction_requests")
+}
+
+enum StudentStatus {
+  ACTIVE
+  GRADUATED
+  TRANSFERRED_OUT
+  WITHDRAWN
+}
+
+model Student {
+  id         String        @id @default(uuid()) @db.Uuid
+  personId   String        @unique @db.Uuid
+  person     Person        @relation(fields: [personId], references: [id])
+  schoolId   String        @db.Uuid
+  /// Nomor induk siswa: unik per sekolah, termasuk siswa yang sudah tidak aktif.
+  nis        String
+  nisn       String?
+  status     StudentStatus @default(ACTIVE)
+  enrolledAt DateTime?     @db.Date
+  exitedAt   DateTime?     @db.Date
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  guardians StudentGuardian[]
+
+  @@unique([schoolId, nis])
+  @@unique([schoolId, nisn])
+  @@index([schoolId, status])
+  @@map("students")
+}
+
+enum EmploymentType {
+  PERMANENT
+  CONTRACT
+  HONORARY
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Employee {
+  id             String         @id @default(uuid()) @db.Uuid
+  personId       String         @unique @db.Uuid
+  person         Person         @relation(fields: [personId], references: [id])
+  schoolId       String         @db.Uuid
+  /// Nomor pegawai internal sekolah (wajib). NIP bersifat opsional karena tidak semua pegawai memilikinya.
+  employeeNumber String
+  nip            String?
+  position       String
+  employmentType EmploymentType @default(PERMANENT)
+  isTeacher      Boolean        @default(false)
+  status         EmployeeStatus @default(ACTIVE)
+  joinedAt       DateTime?      @db.Date
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([schoolId, employeeNumber])
+  @@unique([schoolId, nip])
+  @@index([schoolId, status])
+  @@map("employees")
+}
+
+model Guardian {
+  id         String   @id @default(uuid()) @db.Uuid
+  personId   String   @unique @db.Uuid
+  person     Person   @relation(fields: [personId], references: [id])
+  schoolId   String   @db.Uuid
+  occupation String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  students StudentGuardian[]
+
+  @@map("guardians")
+}
+
+enum GuardianRelationship {
+  FATHER
+  MOTHER
+  LEGAL_GUARDIAN
+  OTHER
+}
+
+enum GuardianLinkStatus {
+  PENDING
+  VERIFIED
+  REVOKED
+}
+
+/// Hubungan wali–siswa. Wali hanya melihat data anak saat status VERIFIED dan dalam rentang berlaku.
+model StudentGuardian {
+  id                String               @id @default(uuid()) @db.Uuid
+  studentId         String               @db.Uuid
+  student           Student              @relation(fields: [studentId], references: [id])
+  guardianId        String               @db.Uuid
+  guardian          Guardian             @relation(fields: [guardianId], references: [id])
+  relationship      GuardianRelationship
+  status            GuardianLinkStatus   @default(PENDING)
+  isPrimaryContact  Boolean              @default(false)
+  canViewAcademic   Boolean              @default(true)
+  canViewAttendance Boolean              @default(true)
+  canViewFinance    Boolean              @default(false)
+  validFrom         DateTime             @default(now())
+  validUntil        DateTime?
+  verifiedAt        DateTime?
+  revokedAt         DateTime?
+  createdById       String?              @db.Uuid
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  invitations Invitation[]
+
+  @@unique([studentId, guardianId])
+  @@index([guardianId, status])
+  @@map("student_guardians")
+}
+
+// ───────────────────────── Impor ─────────────────────────
+
+enum ImportKind {
+  STUDENTS
+}
+
+enum ImportRowStatus {
+  CREATED
+  SKIPPED
+  ERROR
+}
+
+model ImportBatch {
+  id           String     @id @default(uuid()) @db.Uuid
+  schoolId     String     @db.Uuid
+  school       School     @relation(fields: [schoolId], references: [id])
+  kind         ImportKind
+  fileName     String?
+  /// SHA-256 isi file, untuk menandai unggahan ulang.
+  checksum     String
+  totalRows    Int
+  createdCount Int
+  skippedCount Int
+  errorCount   Int
+  createdById  String?    @db.Uuid
+  createdAt    DateTime   @default(now())
+
+  rows ImportRowResult[]
+
+  @@index([schoolId, createdAt])
+  @@map("import_batches")
+}
+
+model ImportRowResult {
+  id        String          @id @default(uuid()) @db.Uuid
+  batchId   String          @db.Uuid
+  batch     ImportBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  rowNumber Int
+  status    ImportRowStatus
+  message   String?
+  entityId  String?         @db.Uuid
+
+  @@index([batchId, rowNumber])
+  @@map("import_row_results")
 }

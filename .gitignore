@@ -22,3 +22,7 @@ Thumbs.db
 
 # Python
 __pycache__/
+
+# Penyimpanan dokumen lokal (berisi data pribadi)
+apps/api/storage/
+apps/api/storage-test/
