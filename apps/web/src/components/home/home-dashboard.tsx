@@ -28,7 +28,7 @@ function Kpi({ label, value, href, note, warn }: { label: string; value: number;
   return (
     <Link href={href} className="group flex flex-col gap-1 rounded-2xl border bg-card p-4 hover:border-[var(--module)]">
       <span className="text-sm text-muted-foreground">{label}</span>
-      <span className={`text-3xl font-bold tabular-nums ${warn && value > 0 ? "text-[var(--brand-accent)]" : ""}`}>{value}</span>
+      <span className={`text-3xl font-bold tabular-nums ${warn && value > 0 ? "text-primary" : ""}`}>{value}</span>
       {note && <span className="text-xs text-muted-foreground">{note}</span>}
     </Link>
   );
@@ -48,7 +48,7 @@ function Todo({ items }: { items: { text: string; href: string; count: number }[
       {open.map((i) => (
         <li key={i.href}>
           <Link href={i.href} className="flex items-center gap-3 py-2 text-sm hover:underline">
-            <AlertTriangle aria-hidden="true" className="size-4 shrink-0 text-[var(--brand-accent)]" />
+            <AlertTriangle aria-hidden="true" className="size-4 shrink-0 text-primary" />
             <span className="flex-1">{i.text}</span>
             <span className="rounded-full bg-[var(--module-tint)] px-2 text-xs font-semibold tabular-nums">{i.count}</span>
             <ArrowRight aria-hidden="true" className="size-4 opacity-50" />
@@ -93,7 +93,7 @@ function YearWidget({ s }: { s: DashboardSummary }) {
 function SecurityNudge({ s }: { s: DashboardSummary }) {
   if (!s.mfa?.recommended || s.mfa.enabled) return null;
   return (
-    <Link href="/me/security#mfa" className="flex items-center gap-3 rounded-2xl border border-[var(--brand-accent)]/50 bg-accent p-4 text-sm text-accent-foreground hover:underline">
+    <Link href="/me/security#mfa" className="flex items-center gap-3 rounded-2xl border border-primary/40 bg-accent p-4 text-sm text-accent-foreground hover:underline">
       <AlertTriangle aria-hidden="true" className="size-5 shrink-0" />
       <span className="flex-1">Peran Anda menangani data penting. Aktifkan verifikasi dua langkah untuk melindungi akun.</span>
       <ArrowRight aria-hidden="true" className="size-4" />
@@ -106,13 +106,12 @@ function SecurityNudge({ s }: { s: DashboardSummary }) {
  * menampilkan waktu perhitungan.
  */
 function MetricTile({ m }: { m: DashboardMetric }) {
-  const alert = m.warn && m.value > 0;
+  const alert = !!m.warn && (m.value ?? 0) > 0;
   const body = (
     <>
       <span className="text-sm text-muted-foreground">{m.label}</span>
       <span className={`text-3xl font-bold tabular-nums ${alert ? "text-primary" : ""}`}>
-        {m.unit === "%" ? m.value.toLocaleString("id-ID", { maximumFractionDigits: 1 }) : m.value}
-        {m.unit}
+        {m.value === null ? "—" : m.unit === "%" ? `${m.value.toLocaleString("id-ID", { maximumFractionDigits: 1 })}%` : m.value}
       </span>
       {(m.note || alert) && <span className="text-xs text-muted-foreground">{[alert ? "Perlu perhatian" : null, m.note].filter(Boolean).join(" · ")}</span>}
     </>

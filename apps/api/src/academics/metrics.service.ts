@@ -67,7 +67,7 @@ export class MetricsService {
       out.push({
         key: 'attendance_rate_7d',
         label: `Tingkat kehadiran ${RATE_DAYS} hari`,
-        value: rate ?? 0,
+        value: rate,
         unit: '%',
         note: rate === null ? 'Belum ada catatan terisi' : undefined,
         href: '/academics/attendance-recap',
@@ -126,7 +126,7 @@ export class MetricsService {
           },
         );
       } else {
-        out.push({ key: 'no_term', label: 'Semester berjalan', value: 0, note: 'Hari ini di luar masa semester', definition: 'Tidak ada semester di tahun ajaran aktif yang memuat tanggal hari ini.', source: 'term' });
+        out.push({ key: 'no_term', label: 'Semester berjalan', value: null, note: 'Hari ini di luar masa semester', definition: 'Tidak ada semester di tahun ajaran aktif yang memuat tanggal hari ini.', source: 'term' });
       }
     }
 
@@ -163,7 +163,7 @@ export class MetricsService {
           out.push({
             key: `homeroom_rate_${h.classGroup.code}`,
             label: `Kehadiran ${h.classGroup.code} (${RATE_DAYS} hari)`,
-            value: rate ?? 0,
+            value: rate,
             unit: '%',
             note: rate === null ? 'Belum ada catatan terisi' : 'Rombel binaan',
             href: `/academics/attendance-recap?classGroupId=${h.classGroup.id}`,

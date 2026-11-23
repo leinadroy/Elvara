@@ -8,7 +8,8 @@ import { RecordTabs, TabPanel } from "@/components/record";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getAcademicOptions, getClasses, pickTerm } from "@/lib/academics";
 import { apiGet, flatParams, getMe } from "@/lib/api-server";
-import { AssignmentEdit, AssignmentForm, GradeLevelForm, PeriodsEditor, ProgramForm, ROLE_OPTIONS, SubjectForm } from "./forms";
+import { TEACHING_ROLE_OPTIONS } from "@/lib/labels";
+import { AssignmentEdit, AssignmentForm, GradeLevelForm, PeriodsEditor, ProgramForm, SubjectForm } from "./forms";
 
 export const metadata: Metadata = { title: "Pengaturan akademik" };
 const BASE = "/academics/setup";
@@ -66,7 +67,7 @@ async function Content({ searchParams }: PageProps<"/academics/setup">) {
                   <TableCell>{g.name}</TableCell>
                   <TableCell className="tabular-nums">{g.classCount}</TableCell>
                   {manageClasses && (
-                    <TableCell className="w-1/2">
+                    <TableCell className="min-w-48">
                       <GradeLevelForm row={g} />
                     </TableCell>
                   )}
@@ -102,7 +103,7 @@ async function Content({ searchParams }: PageProps<"/academics/setup">) {
                   <TableCell>{p.name}</TableCell>
                   <TableCell>{statusText(p.status)}</TableCell>
                   {manageClasses && (
-                    <TableCell className="w-1/2">
+                    <TableCell className="min-w-48">
                       <ProgramForm row={p} />
                     </TableCell>
                   )}
@@ -140,7 +141,7 @@ async function Content({ searchParams }: PageProps<"/academics/setup">) {
                   <TableCell>{s.groupCode ?? "—"}</TableCell>
                   <TableCell>{statusText(s.status)}</TableCell>
                   {manageCurriculum && (
-                    <TableCell className="w-1/2">
+                    <TableCell className="min-w-48">
                       <SubjectForm row={s} />
                     </TableCell>
                   )}
@@ -190,13 +191,13 @@ async function Content({ searchParams }: PageProps<"/academics/setup">) {
                   <TableCell className="font-semibold">{a.classGroup.code}</TableCell>
                   <TableCell>{a.subject.name}</TableCell>
                   <TableCell>{a.employee.fullName}</TableCell>
-                  <TableCell>{ROLE_OPTIONS.find((r) => r.value === a.teachingRole)?.label}</TableCell>
+                  <TableCell>{TEACHING_ROLE_OPTIONS.find((r) => r.value === a.teachingRole)?.label}</TableCell>
                   <TableCell className={`tabular-nums ${a.scheduledSlots < a.weeklyPeriods ? "font-semibold text-primary" : ""}`}>
                     {a.scheduledSlots} / {a.weeklyPeriods}
                     {a.scheduledSlots < a.weeklyPeriods && <span className="ml-1 text-xs font-normal">kurang</span>}
                   </TableCell>
                   {manageCurriculum && (
-                    <TableCell className="w-1/3">
+                    <TableCell className="min-w-40">
                       <div className="flex flex-wrap items-start gap-1">
                         <AssignmentEdit id={a.id} employeeId={a.employee.id} weeklyPeriods={a.weeklyPeriods} teachers={teachers} />
                         <ActionButton method="DELETE" path={`/teaching-assignments/${a.id}`} label="Hapus" variant="ghost" size="xs" confirm={`Hapus penugasan ${a.subject.name} ${a.classGroup.code}?`} />

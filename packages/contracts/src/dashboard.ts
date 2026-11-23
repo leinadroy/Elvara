@@ -8,7 +8,8 @@ import type { ChildSummary } from './people.js';
 export interface DashboardMetric {
   key: string;
   label: string;
-  value: number;
+  /** null = belum ada data untuk dihitung (tampil "—"). */
+  value: number | null;
   /** Satuan tampilan, mis. "%" untuk persentase. */
   unit?: '%';
   definition: string;

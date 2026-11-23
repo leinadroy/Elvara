@@ -8,7 +8,6 @@ import {
   LessonPeriodsSchema,
   ProgramSchema,
   SubjectSchema,
-  TEACHING_ROLES,
   TeachingAssignmentSchema,
   type GradeLevelView,
   type LessonPeriodView,
@@ -19,14 +18,11 @@ import { SelectField, TextField } from "@/components/form";
 import { InlineForm } from "@/components/inline-form";
 import { Button } from "@/components/ui/button";
 import { apiSend } from "@/lib/api-client";
+import { TEACHING_ROLE_OPTIONS as ROLE_OPTIONS } from "@/lib/labels";
 
 const STATUS_OPTIONS = [
   { value: "ACTIVE", label: "Aktif" },
   { value: "INACTIVE", label: "Nonaktif" },
-];
-export const ROLE_OPTIONS = [
-  { value: TEACHING_ROLES[0], label: "Guru utama" },
-  { value: TEACHING_ROLES[1], label: "Pendamping" },
 ];
 
 /** Baris yang bisa diubah: tombol "Ubah" membuka form kecil di tempat. */

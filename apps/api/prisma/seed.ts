@@ -197,7 +197,7 @@ async function main() {
     if (await prisma.timetableVersion.findFirst({ where: { termId: term.id, classGroupId: classes[cls]! } })) continue;
     const slots = [];
     for (const [subject, employeeId, startTime, endTime] of rows) {
-      const teachingAssignmentId = await assignment(cls, subject, employeeId, 12);
+      const teachingAssignmentId = await assignment(cls, subject, employeeId, 6);
       for (let weekday = 1; weekday <= 6; weekday++) slots.push({ teachingAssignmentId, weekday, startTime, endTime });
     }
     await prisma.timetableVersion.create({

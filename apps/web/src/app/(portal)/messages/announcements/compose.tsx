@@ -30,7 +30,10 @@ export function ComposeAnnouncement({ classes, buildings }: { classes: { value: 
           buildingId: v.audienceKind === "BUILDING" ? v.buildingId : null,
           audienceRole: v.audienceKind === "ROLE" ? v.audienceRole : null,
         })}
-        onSuccess={(d) => setSent(d.recipientCount)}
+        onSuccess={(d) => {
+          setSent(d.recipientCount);
+          setAudience("ALL"); // form dikosongkan, pilihan penerima kembali ke default
+        }}
         fields={(errors) => (
           <>
             <div className="sm:col-span-2">

@@ -99,11 +99,11 @@ async function AttendanceWidget({ studentId, title }: { studentId?: string; titl
   return (
     <Card title={title} action={<Link href={href} className="text-xs underline">Rincian</Link>}>
       <p className="text-xs text-muted-foreground">30 hari terakhir</p>
-      <dl className="grid grid-cols-5 gap-1 text-center">
+      <dl className="grid grid-cols-5 gap-0.5 text-center">
         {ATTENDANCE_STATUSES.map((k) => (
           <div key={k} className={`rounded-lg p-1.5 ${k === "ABSENT" && res.data.counts[k] ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
             <dd className="text-lg font-bold tabular-nums">{res.data.counts[k]}</dd>
-            <dt className="text-[11px]">{ATTENDANCE_STATUS_LABELS[k]}</dt>
+            <dt className="text-[10px] leading-tight break-words">{ATTENDANCE_STATUS_LABELS[k]}</dt>
           </div>
         ))}
       </dl>

@@ -27,6 +27,8 @@ import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 type Tx = Prisma.TransactionClient;
+/** Tanggal kalender (kolom DATE, UTC tengah malam) → "23 November 2026". */
+const LONG_DATE = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 
 const SESSION_INCLUDE = {
   classGroup: { select: { id: true, code: true } },
@@ -270,7 +272,7 @@ export class AttendanceService {
       userIds.map((recipientId) => ({
         recipientId,
         title: `${rec.fullName} tercatat ${ATTENDANCE_STATUS_LABELS.ABSENT.toLowerCase()}`,
-        body: `${s.subjectName ? `${s.subjectName}, ` : ''}${s.classGroup.code}, ${date}. Hubungi wali kelas bila ada keterangan.`,
+        body: `${s.subjectName ? `${s.subjectName}, ` : ''}${s.classGroup.code}, ${LONG_DATE.format(s.sessionDate)}. Hubungi wali kelas bila ada keterangan.`,
         link: `/guardian/attendance?studentId=${rec.studentId}`,
       })),
     );

@@ -96,7 +96,7 @@ export function SessionSheet({ session }: { session: AttendanceSessionDetail }) 
           {online ? "Terhubung" : "Offline"}
         </span>
         <p aria-live="polite" className={`ml-auto text-xs ${dirty ? "font-medium text-primary" : "text-muted-foreground"}`}>
-          {pending ? "Menyimpan…" : dirty ? `${changed.length} perubahan belum disimpan` : (savedMsg ?? `${filled}/${session.roster.length} terisi`)}
+          {pending ? "Menyimpan…" : dirty ? `${changed.length} perubahan belum disimpan` : (savedMsg ?? `${filled}/${session.roster.length} terisi${filled ? " · tersimpan" : ""}`)}
         </p>
         {session.canEdit && (
           <>
