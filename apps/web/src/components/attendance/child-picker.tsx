@@ -13,9 +13,9 @@ export async function resolveChild(studentId: string | undefined) {
 
 export function ChildTabs({ basePath, items, chosenId }: { basePath: string; items: { studentId: string; fullName: string }[]; chosenId: string | null }) {
   if (!items.length) return <EmptyState title="Belum ada anak terhubung" description="Hubungan wali perlu diverifikasi sekolah sebelum data anak bisa dilihat." />;
-  if (items.length < 2) return null;
   return (
-    <nav aria-label="Pilih anak" className="flex flex-wrap gap-1.5">
+    <nav aria-label="Pilih anak" className="flex flex-wrap items-center gap-1.5">
+      <span className="text-xs text-muted-foreground">Anak:</span>
       {items.map((c) => (
         <Link
           key={c.studentId}

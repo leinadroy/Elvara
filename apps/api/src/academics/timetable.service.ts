@@ -231,6 +231,13 @@ export class TimetableService {
     return { term, periods, slots: slots.map(slotView).sort(sortSlots) };
   }
 
+  /** Versi terbit yang berlaku untuk rombel pada semester yang memuat tanggal itu. */
+  async publishedVersion(schoolId: string, classGroupId: string, date: string) {
+    const term = await this.termOn(schoolId, date);
+    if (!term) return null;
+    return this.prisma.timetableVersion.findFirst({ where: { termId: term.id, classGroupId, status: 'PUBLISHED' }, select: { versionNo: true, publishedAt: true, effectiveFrom: true } });
+  }
+
   forClass(schoolId: string, classGroupId: string, date: string) {
     return this.published(schoolId, date, { version: { classGroupId } });
   }

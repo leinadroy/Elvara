@@ -1,5 +1,5 @@
-import { Controller, Get } from '@nestjs/common';
-import { MFA_RECOMMENDED_ROLES, type DashboardSummary } from '@smart-school/contracts';
+import { Controller, Get, Logger } from '@nestjs/common';
+import { MFA_RECOMMENDED_ROLES, type DashboardMetric, type DashboardSummary } from '@smart-school/contracts';
 import type { AuthContext } from '../auth/auth.types.js';
 import { CurrentAuth } from '../auth/decorators.js';
 import { fromDbDate, todayIso } from '../common/dates.js';
@@ -10,6 +10,8 @@ import { GuardiansService } from './guardians.service.js';
 /** Ringkasan beranda per peran. Angka dihitung langsung dari data (tanpa cache) dan disaring sesuai izin. */
 @Controller('dashboard')
 export class DashboardController {
+  private readonly logger = new Logger(DashboardController.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly guardians: GuardiansService,
@@ -24,6 +26,7 @@ export class DashboardController {
     const term = year?.terms.find((t) => fromDbDate(t.startDate) <= today && today <= fromDbDate(t.endDate));
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: auth.userId }, select: { mfaSecret: true } });
 
+    const metrics: DashboardMetric[] = [];
     const out: DashboardSummary = {
       academicYear: year
         ? {
@@ -50,13 +53,35 @@ export class DashboardController {
         this.prisma.studentGuardian.count({ where: { status: 'PENDING', student: { schoolId: s } } }),
       ]);
       out.people = { studentsActive, employeesActive, teachersActive, guardians, studentsWithoutVerifiedGuardian: withoutGuardian, pendingGuardianLinks: pendingLinks };
+      metrics.push(
+        { key: 'students_active', label: 'Siswa aktif', value: studentsActive, href: '/admin/students?status=ACTIVE', definition: 'Siswa berstatus aktif (belum lulus, pindah, atau keluar).', source: 'student' },
+        { key: 'employees_active', label: 'Pegawai aktif', value: employeesActive, note: `${teachersActive} guru`, href: '/admin/employees?status=ACTIVE', definition: 'Pegawai berstatus aktif; catatan menunjukkan yang ditandai sebagai guru.', source: 'employee' },
+        { key: 'guardian_links_pending', label: 'Tautan wali menunggu verifikasi', value: pendingLinks, warn: true, href: '/admin/guardians', definition: 'Hubungan wali–siswa berstatus menunggu. Wali belum bisa melihat data anak sampai terverifikasi.', source: 'student_guardian' },
+        { key: 'students_without_guardian', label: 'Siswa tanpa wali terverifikasi', value: withoutGuardian, warn: true, href: '/admin/students?status=ACTIVE', definition: 'Siswa aktif yang belum punya satu pun hubungan wali berstatus terverifikasi.', source: 'student, student_guardian' },
+      );
     }
     if (auth.permissions.has('corrections:review')) {
       out.pendingCorrections = await this.prisma.profileCorrectionRequest.count({ where: { schoolId: s, status: 'PENDING' } });
+      metrics.push({ key: 'profile_corrections_pending', label: 'Koreksi data menunggu', value: out.pendingCorrections, warn: true, href: '/admin/corrections?status=PENDING', definition: 'Pengajuan koreksi data diri yang belum disetujui atau ditolak.', source: 'profile_correction_request' });
+    }
+    if (auth.permissions.has('accounts:manage')) {
+      const now = new Date();
+      const [open, expired, disabled] = await Promise.all([
+        this.prisma.invitation.count({ where: { schoolId: s, acceptedAt: null, revokedAt: null, expiresAt: { gt: now } } }),
+        this.prisma.invitation.count({ where: { schoolId: s, acceptedAt: null, revokedAt: null, expiresAt: { lte: now } } }),
+        this.prisma.user.count({ where: { status: 'DISABLED', roles: { some: { schoolId: s } } } }),
+      ]);
+      metrics.push(
+        { key: 'invitations_open', label: 'Undangan akun belum diterima', value: open, note: `${disabled} akun nonaktif`, href: '/admin/accounts', definition: 'Undangan akun yang masih berlaku tetapi belum diterima. Catatan menunjukkan akun yang dinonaktifkan.', source: 'account_invitation, user_account' },
+        { key: 'invitations_expired', label: 'Undangan kedaluwarsa', value: expired, warn: true, href: '/admin/accounts', definition: 'Undangan yang habis masa berlakunya sebelum diterima dan belum dicabut. Kirim ulang undangan bila orangnya masih perlu akses.', source: 'account_invitation' },
+      );
     }
     if (auth.permissions.has('imports:manage')) {
       const last = await this.prisma.importBatch.findFirst({ where: { schoolId: s }, orderBy: { createdAt: 'desc' } });
       out.lastImport = last ? { id: last.id, fileName: last.fileName, createdAt: last.createdAt.toISOString(), errorCount: last.errorCount } : null;
+      if (last) {
+        metrics.push({ key: 'import_errors_last', label: 'Baris bermasalah impor terakhir', value: last.errorCount, warn: true, href: `/admin/imports/${last.id}`, note: last.fileName ?? undefined, definition: 'Jumlah baris berstatus galat pada batch impor terbaru; baris lain tetap diproses.', source: 'import_batch, import_row_result' });
+      }
     }
     if (auth.permissions.has('audit:read')) {
       const events = await this.prisma.auditEvent.findMany({ where: { schoolId: s }, orderBy: { createdAt: 'desc' }, take: 6 });
@@ -73,7 +98,14 @@ export class DashboardController {
       out.pendingMyCorrection = pending > 0;
       out.myDocumentCount = docs;
     }
-    out.metrics = await this.metrics.forRole(auth);
+    // Angka R1 dihitung terpisah: bila gagal, ringkasan lain tetap tampil dengan penanda (E8).
+    try {
+      metrics.push(...(await this.metrics.forRole(auth)));
+    } catch (err) {
+      this.logger.error('Angka beranda R1 gagal dihitung', err as Error);
+      out.metricsUnavailable = true;
+    }
+    out.metrics = metrics;
     return out;
   }
 }

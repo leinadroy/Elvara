@@ -67,6 +67,8 @@ export interface TeacherToday {
   lessons: TodayLesson[];
   /** Rombel yang diampu sebagai wali kelas (untuk sesi tambahan dan tinjauan koreksi). */
   homeroomClasses: { id: string; code: string }[];
+  /** Sesi tambahan (ad hoc) yang dibuka pegawai ini pada hari ini. */
+  adHocSessions: { id: string; classGroup: { id: string; code: string }; reason: string | null; status: SessionStatus; filled: number; total: number }[];
 }
 
 export interface RosterRow {

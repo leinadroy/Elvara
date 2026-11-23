@@ -3,7 +3,8 @@ import { Suspense } from "react";
 import { WEEKDAY_LABELS, type TeacherToday } from "@smart-school/contracts";
 import { OpenSessionButton } from "@/components/attendance/open-session-button";
 import { SessionBadge } from "@/components/attendance/status";
-import { ApiErrorState, EmptyState, LoadingBlock, PageHeader } from "@/components/page-states";
+import { ApiErrorState, EmptyState, LinkButton, LoadingBlock, PageHeader } from "@/components/page-states";
+import { AdHocSessionForm } from "./ad-hoc";
 import { apiGet } from "@/lib/api-server";
 import { formatDate } from "@/lib/format";
 
@@ -56,8 +57,40 @@ async function Content() {
           ))}
         </ul>
       )}
+      {t.adHocSessions.length > 0 && (
+        <section aria-label="Sesi tambahan hari ini" className="flex flex-col gap-2">
+          <h2 className="font-semibold">Sesi tambahan hari ini</h2>
+          <ul className="flex flex-col gap-2">
+            {t.adHocSessions.map((x) => (
+              <li key={x.id} className="flex flex-wrap items-center gap-3 rounded-2xl border bg-card p-4">
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-lg font-semibold">{x.classGroup.code}</span>
+                  <span className="text-sm text-muted-foreground">{x.reason}</span>
+                </div>
+                <span className="flex items-center gap-2 text-sm">
+                  <SessionBadge status={x.status} />
+                  <span className="tabular-nums">
+                    {x.filled}/{x.total} terisi
+                  </span>
+                </span>
+                <LinkButton href={`/teacher/attendance/sessions/${x.id}`} variant="outline">
+                  Buka
+                </LinkButton>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {t.homeroomClasses.length > 0 && (
-        <p className="text-sm text-muted-foreground">Anda wali kelas {t.homeroomClasses.map((c) => c.code).join(", ")}. Koreksi absensi rombel ini menunggu keputusan Anda di menu Koreksi absensi.</p>
+        <section aria-label="Sesi tambahan" className="flex flex-col gap-3 rounded-2xl border bg-card p-4">
+          <div>
+            <h2 className="font-semibold">Sesi tambahan (wali kelas)</h2>
+            <p className="text-sm text-muted-foreground">
+              Untuk kegiatan di luar jadwal rombel binaan Anda ({t.homeroomClasses.map((c) => c.code).join(", ")}). Koreksi absensi rombel ini menunggu keputusan Anda di menu Koreksi absensi.
+            </p>
+          </div>
+          <AdHocSessionForm classes={t.homeroomClasses} today={t.date} />
+        </section>
       )}
     </>
   );

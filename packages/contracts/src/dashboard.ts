@@ -42,6 +42,8 @@ export interface DashboardSummary {
   mfa?: { enabled: boolean; recommended: boolean };
   /** Angka R1 sesuai peran aktif (FR-8.1–8.7). */
   metrics?: DashboardMetric[];
+  /** true bila angka R1 gagal dihitung; angka lain tetap dikirim. */
+  metricsUnavailable?: boolean;
   /** Waktu ringkasan dihitung (ISO). */
   generatedAt: string;
 }

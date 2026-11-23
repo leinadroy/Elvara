@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { connection } from "next/server";
 import {
   ATTENDANCE_STATUS_LABELS,
   ATTENDANCE_STATUSES,
@@ -7,18 +8,28 @@ import {
   type DashboardSummary,
   type Me,
   type PersonalAttendance,
-  type PublishedTimetable,
+  type PortalClassTimetable,
   type TeacherToday,
 } from "@smart-school/contracts";
 import { OpenSessionButton } from "@/components/attendance/open-session-button";
 import { SessionBadge } from "@/components/attendance/status";
 import { apiGet } from "@/lib/api-server";
 import { formatDateTime } from "@/lib/format";
+import { Fragment } from "react";
 import { Card } from "./home-dashboard";
+import { StaleNotice } from "./stale-notice";
+
+function Unavailable({ title, className = "" }: { title: string; className?: string }) {
+  return (
+    <Card title={title} className={className}>
+      <StaleNotice what="Data bagian ini" />
+    </Card>
+  );
+}
 
 async function TeacherTodayWidget() {
   const res = await apiGet<TeacherToday>("/teacher/today");
-  if (!res.ok) return null;
+  if (!res.ok) return <Unavailable title="Mengajar hari ini" className="lg:col-span-2" />;
   const t = res.data;
   return (
     <Card title={`Mengajar hari ini · ${WEEKDAY_LABELS[t.weekday]}`} className="lg:col-span-2" action={<Link href="/teacher/attendance" className="text-xs underline">Semua</Link>}>
@@ -67,23 +78,34 @@ async function TeacherTodayWidget() {
 }
 
 async function TodayClassWidget({ studentId, title }: { studentId?: string; title: string }) {
-  const res = await apiGet<PublishedTimetable & { classGroup: { code: string } | null }>(`/me/class-timetable${studentId ? `?studentId=${studentId}` : ""}`);
-  if (!res.ok) return null;
-  const weekday = ((new Date().getDay() + 6) % 7) + 1;
+  const res = await apiGet<PortalClassTimetable>(`/me/class-timetable${studentId ? `?studentId=${studentId}` : ""}`);
+  if (!res.ok) return <Unavailable title={title} />;
+  await connection(); // tanggal hari ini dihitung saat permintaan, bukan saat prerender
+  const todayIso = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
+  const weekday = ((new Date(`${todayIso}T12:00:00Z`).getUTCDay() + 6) % 7) + 1;
   const today = res.data.slots.filter((s) => s.weekday === weekday);
+  const changeOf = (slotId: string) => res.data.changes.find((c) => c.timetableSlotId === slotId && c.date === todayIso);
   return (
     <Card title={`${title} · ${WEEKDAY_LABELS[weekday]}`} action={<Link href={studentId ? `/guardian/timetable?studentId=${studentId}` : "/student/timetable"} className="text-xs underline">Seminggu</Link>}>
       {res.data.classGroup && <p className="text-xs text-muted-foreground">Rombel {res.data.classGroup.code}</p>}
       {today.length ? (
         <ul className="flex flex-col gap-1.5 text-sm">
-          {today.map((s) => (
-            <li key={s.id} className="flex gap-3">
-              <span className="w-24 font-mono text-xs tabular-nums">
-                {s.startTime}–{s.endTime}
-              </span>
-              <span>{s.subject.name}</span>
-            </li>
-          ))}
+          {today.map((s) => {
+            const ch = changeOf(s.id);
+            return (
+              <li key={s.id} className="flex gap-3">
+                <span className="w-24 font-mono text-xs tabular-nums">
+                  {s.startTime}–{s.endTime}
+                </span>
+                <span className={ch?.kind === "CANCELLED" ? "text-muted-foreground line-through" : ""}>{s.subject.name}</span>
+                {ch && (
+                  <span className="rounded bg-primary px-1.5 text-[11px] font-medium text-primary-foreground">
+                    {ch.kind === "CANCELLED" ? "Batal" : `Diganti${ch.substitute ? `: ${ch.substitute.fullName}` : ""}${ch.room ? ` · ${ch.room.code}` : ""}`}
+                  </span>
+                )}
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <p className="text-sm text-muted-foreground">Tidak ada pelajaran hari ini.</p>
@@ -94,7 +116,7 @@ async function TodayClassWidget({ studentId, title }: { studentId?: string; titl
 
 async function AttendanceWidget({ studentId, title }: { studentId?: string; title: string }) {
   const res = await apiGet<PersonalAttendance>(`/me/attendance${studentId ? `?studentId=${studentId}` : ""}`);
-  if (!res.ok) return null;
+  if (!res.ok) return <Unavailable title={title} />;
   const href = studentId ? `/guardian/attendance?studentId=${studentId}` : "/student/attendance";
   return (
     <Card title={title} action={<Link href={href} className="text-xs underline">Rincian</Link>}>
@@ -113,7 +135,7 @@ async function AttendanceWidget({ studentId, title }: { studentId?: string; titl
 
 async function AnnouncementsWidget() {
   const res = await apiGet<AnnouncementView[]>("/announcements");
-  if (!res.ok) return null;
+  if (!res.ok) return <Unavailable title="Pengumuman" />;
   return (
     <Card title="Pengumuman" action={<Link href="/messages/announcements" className="text-xs underline">Semua</Link>}>
       {res.data.length ? (
@@ -158,10 +180,9 @@ function AcademicsWidget() {
 /** Widget R1 per peran aktif (blueprint 04: beranda berisi hal yang perlu dikerjakan hari ini). */
 export async function RoleWidgets({ me, s }: { me: Me; s: DashboardSummary }) {
   const role = me.activeRole;
-  const firstChild = s.children?.[0]?.studentId;
   return (
     <>
-      {me.permissions.includes("attendance:take") && <TeacherTodayWidget />}
+      {role === "TEACHER" && me.permissions.includes("attendance:take") && <TeacherTodayWidget />}
       {(role === "CURRICULUM" || role === "ADMIN") && <AcademicsWidget />}
       {role === "STUDENT" && (
         <>
@@ -174,12 +195,13 @@ export async function RoleWidgets({ me, s }: { me: Me; s: DashboardSummary }) {
           <p className="text-sm text-muted-foreground">Jadwal tugas dan shift staf diisi dari modul kehadiran pegawai (rilis R3). Sampai saat itu, ikuti pengumuman internal di bawah.</p>
         </Card>
       )}
-      {role === "GUARDIAN" && firstChild && (
-        <>
-          <TodayClassWidget studentId={firstChild} title={`Jadwal ${s.children![0]!.fullName}`} />
-          <AttendanceWidget studentId={firstChild} title={`Kehadiran ${s.children![0]!.fullName}`} />
-        </>
-      )}
+      {role === "GUARDIAN" &&
+        (s.children ?? []).map((c) => (
+          <Fragment key={c.studentId}>
+            <TodayClassWidget studentId={c.studentId} title={`Jadwal ${c.fullName}`} />
+            <AttendanceWidget studentId={c.studentId} title={`Kehadiran ${c.fullName}`} />
+          </Fragment>
+        ))}
       <AnnouncementsWidget />
     </>
   );

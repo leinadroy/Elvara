@@ -3,10 +3,11 @@ import type { ReactNode } from "react";
 import { Suspense } from "react";
 import { GUARDIAN_RELATIONSHIP_LABELS, ROLE_LABELS, STUDENT_STATUS_LABELS, type DashboardMetric, type DashboardSummary, type Me } from "@smart-school/contracts";
 import { AlertTriangle, ArrowRight, CheckCircle2 } from "lucide-react";
-import { ApiErrorState, Chip, LoadingBlock, PageHeader } from "@/components/page-states";
+import { Chip, LoadingBlock, PageHeader } from "@/components/page-states";
 import { apiGet, getMe } from "@/lib/api-server";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { RoleWidgets } from "./r1-widgets";
+import { StaleNotice } from "./stale-notice";
 
 /** Kartu widget bergaya infografis: garis warna modul di atas, judul kecil kapital. */
 export function Card({ title, children, className = "", action }: { title: string; children: ReactNode; className?: string; action?: ReactNode }) {
@@ -24,18 +25,9 @@ export function Card({ title, children, className = "", action }: { title: strin
   );
 }
 
-function Kpi({ label, value, href, note, warn }: { label: string; value: number; href: string; note?: string; warn?: boolean }) {
-  return (
-    <Link href={href} className="group flex flex-col gap-1 rounded-2xl border bg-card p-4 hover:border-[var(--module)]">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className={`text-3xl font-bold tabular-nums ${warn && value > 0 ? "text-primary" : ""}`}>{value}</span>
-      {note && <span className="text-xs text-muted-foreground">{note}</span>}
-    </Link>
-  );
-}
-
-function Todo({ items }: { items: { text: string; href: string; count: number }[] }) {
-  const open = items.filter((i) => i.count > 0);
+/** Daftar tindak lanjut: angka bertanda perhatian yang bernilai > 0, dengan tautan ke daftarnya. */
+function Todo({ metrics }: { metrics: DashboardMetric[] }) {
+  const open = metrics.filter((m) => m.warn && (m.value ?? 0) > 0 && m.href);
   if (!open.length) {
     return (
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -45,12 +37,12 @@ function Todo({ items }: { items: { text: string; href: string; count: number }[
   }
   return (
     <ul className="flex flex-col divide-y">
-      {open.map((i) => (
-        <li key={i.href}>
-          <Link href={i.href} className="flex items-center gap-3 py-2 text-sm hover:underline">
+      {open.map((m) => (
+        <li key={m.key}>
+          <Link href={m.href!} className="flex items-center gap-3 py-2 text-sm hover:underline">
             <AlertTriangle aria-hidden="true" className="size-4 shrink-0 text-primary" />
-            <span className="flex-1">{i.text}</span>
-            <span className="rounded-full bg-[var(--module-tint)] px-2 text-xs font-semibold tabular-nums">{i.count}</span>
+            <span className="flex-1">{m.label}</span>
+            <span className="rounded-full bg-[var(--module-tint)] px-2 text-xs font-semibold tabular-nums">{m.value}</span>
             <ArrowRight aria-hidden="true" className="size-4 opacity-50" />
           </Link>
         </li>
@@ -146,12 +138,12 @@ function Metrics({ s }: { s: DashboardSummary }) {
         ))}
       </div>
       <p className="text-xs text-muted-foreground">Dihitung langsung dari data pada {formatDateTime(s.generatedAt)}. Muat ulang halaman untuk angka terbaru.</p>
+      {s.metricsUnavailable && <StaleNotice what="Sebagian angka akademik dan absensi" />}
     </section>
   );
 }
 
 function Widgets({ me, s }: { me: Me; s: DashboardSummary }) {
-  const p = s.people;
   const isGuardian = me.activeRole === "GUARDIAN";
   const isAdmin = me.permissions.includes("accounts:manage");
 
@@ -160,26 +152,10 @@ function Widgets({ me, s }: { me: Me; s: DashboardSummary }) {
       <SecurityNudge s={s} />
       <Metrics s={s} />
 
-      {p && (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Kpi label="Siswa aktif" value={p.studentsActive} href="/admin/students?status=ACTIVE" />
-          <Kpi label="Pegawai aktif" value={p.employeesActive} href="/admin/employees?status=ACTIVE" note={`${p.teachersActive} guru`} />
-          <Kpi label="Orang tua / wali" value={p.guardians} href="/admin/guardians" note={`${p.pendingGuardianLinks} tautan menunggu verifikasi`} />
-          <Kpi label="Siswa tanpa wali terverifikasi" value={p.studentsWithoutVerifiedGuardian} href="/admin/students?status=ACTIVE" warn />
-        </div>
-      )}
-
       <div className="grid gap-3 lg:grid-cols-3">
-        {isAdmin && p && (
+        {isAdmin && s.metrics && (
           <Card title="Perlu tindakan" className="lg:col-span-2">
-            <Todo
-              items={[
-                { text: "Pengajuan koreksi data menunggu tinjauan", href: "/admin/corrections?status=PENDING", count: s.pendingCorrections ?? 0 },
-                { text: "Siswa aktif belum punya wali terverifikasi", href: "/admin/students?status=ACTIVE", count: p.studentsWithoutVerifiedGuardian },
-                { text: "Tautan wali menunggu verifikasi undangan", href: "/admin/guardians", count: p.pendingGuardianLinks },
-                ...(s.lastImport ? [{ text: `Baris bermasalah pada impor terakhir (${s.lastImport.fileName ?? "tanpa nama"})`, href: `/admin/imports/${s.lastImport.id}`, count: s.lastImport.errorCount }] : []),
-              ]}
-            />
+            <Todo metrics={s.metrics} />
           </Card>
         )}
 
@@ -252,8 +228,11 @@ function Widgets({ me, s }: { me: Me; s: DashboardSummary }) {
   );
 }
 
+
 async function DashboardContent() {
   const [me, res] = await Promise.all([getMe(), apiGet<DashboardSummary>("/dashboard/summary")]);
+  // Bila ringkasan gagal, widget lain (jadwal, absensi, pengumuman) tetap dimuat dari sumbernya masing-masing.
+  const fallback: DashboardSummary = { academicYear: null, currentTermName: null, generatedAt: "" };
   return (
     <>
       <PageHeader
@@ -264,7 +243,16 @@ async function DashboardContent() {
           </>
         }
       />
-      {res.ok ? <Widgets me={me} s={res.data} /> : <ApiErrorState status={res.status} error={res.error} />}
+      {res.ok ? (
+        <Widgets me={me} s={res.data} />
+      ) : (
+        <>
+          <StaleNotice what={`Ringkasan sekolah (kode ${res.error.requestId})`} />
+          <div className="grid gap-3 lg:grid-cols-3">
+            <RoleWidgets me={me} s={fallback} />
+          </div>
+        </>
+      )}
     </>
   );
 }

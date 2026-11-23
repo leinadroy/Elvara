@@ -24,7 +24,9 @@ import {
 import { z } from 'zod';
 import type { AuthContext } from '../auth/auth.types.js';
 import { CurrentAuth, RequirePermissions } from '../auth/decorators.js';
+import { fromDbDate } from '../common/dates.js';
 import { requestMeta } from '../common/request-meta.js';
+import { addDays } from '../common/school-time.js';
 import { ClassesService } from './classes.service.js';
 import { CurriculumService } from './curriculum.service.js';
 import { ScopeService } from './scope.service.js';
@@ -293,7 +295,19 @@ export class AcademicsController {
     const studentId = await this.scope.portalStudentId(auth, 'academic', q.studentId);
     const today = await this.classes.today(auth);
     const cls = await this.scope.classOf(studentId, today);
-    if (!cls) return { term: null, periods: [], slots: [], classGroup: null };
-    return { ...(await this.timetable.forClass(auth.schoolId, cls.id, today)), classGroup: cls };
+    if (!cls) return { term: null, periods: [], slots: [], classGroup: null, versionNo: null, publishedAt: null, effectiveFrom: null, changes: [] };
+    const [timetable, version, changes] = await Promise.all([
+      this.timetable.forClass(auth.schoolId, cls.id, today),
+      this.timetable.publishedVersion(auth.schoolId, cls.id, today),
+      this.timetable.exceptions(auth, { from: today, to: addDays(today, 14), classGroupId: cls.id }),
+    ]);
+    return {
+      ...timetable,
+      classGroup: cls,
+      versionNo: version?.versionNo ?? null,
+      publishedAt: version?.publishedAt?.toISOString() ?? null,
+      effectiveFrom: version?.effectiveFrom ? fromDbDate(version.effectiveFrom) : null,
+      changes,
+    };
   }
 }

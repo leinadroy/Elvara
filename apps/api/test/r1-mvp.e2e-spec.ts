@@ -326,3 +326,46 @@ describe('R1 audiens gedung & peran', () => {
     expect((await stranger.get(api('/announcements')).expect(200)).body).toHaveLength(0);
   });
 });
+
+describe('R1 pelengkap: sesi tambahan, perubahan jadwal di portal, angka admin', () => {
+  it('wali kelas membuka sesi tambahan dan melihatnya di daftar hari ini; guru lain ditolak', async () => {
+    const a = await setupClass('7A', [0, 2]);
+    const homeroom = await loginAs(app, r1.homeroomEmail);
+    await homeroom.post(api('/attendance/sessions')).send({ classGroupId: a.cls, date: today(), reason: 'ab' }).expect(422);
+    const sid = (await homeroom.post(api('/attendance/sessions')).send({ classGroupId: a.cls, date: today(), reason: 'Kegiatan kelas di luar jadwal' }).expect(200)).body.id;
+    const t = await homeroom.get(api('/teacher/today')).expect(200);
+    expect(t.body.adHocSessions).toEqual([expect.objectContaining({ id: sid, classGroup: { id: a.cls, code: '7A' }, status: 'OPEN', filled: 0, total: 2 })]);
+    const teacher = await loginAs(app, fx.emails.teacher);
+    await teacher.post(api('/attendance/sessions')).send({ classGroupId: a.cls, date: today(), reason: 'Bukan wali kelas' }).expect(403);
+  });
+
+  it('portal siswa menampilkan versi, waktu terbit, dan perubahan pertemuan', async () => {
+    const a = await setupClass('7A', [2]);
+    await a.cur.post(api(`/timetable/versions/${a.draft}/publish`)).send({ effectiveFrom: addDays(today(), -100) }).expect(204);
+    const nextWeek = addDays(today(), 7);
+    const weekday = ((new Date(`${nextWeek}T12:00:00Z`).getUTCDay() + 6) % 7) + 1;
+    const slot = await prisma.timetableSlot.findFirstOrThrow({ where: { version: { classGroupId: a.cls, status: 'PUBLISHED' }, weekday } });
+    await a.cur.post(api(`/timetable/slots/${slot.id}/exceptions`)).send({ date: nextWeek, kind: 'CANCELLED', reason: 'Ujian sekolah' }).expect(201);
+
+    const student = await loginAs(app, r1.studentEmail);
+    const res = await student.get(api('/me/class-timetable')).expect(200);
+    expect(res.body).toMatchObject({ classGroup: { code: '7A' }, versionNo: 1, effectiveFrom: addDays(today(), -100) });
+    expect(res.body.publishedAt).toBeTruthy();
+    expect(res.body.changes).toEqual([expect.objectContaining({ date: nextWeek, kind: 'CANCELLED', reason: 'Ujian sekolah' })]);
+    // Wali melihat hal yang sama untuk anaknya.
+    const guardian = await loginAs(app, r1.guardianEmail);
+    expect((await guardian.get(api('/me/class-timetable')).expect(200)).body.changes).toHaveLength(1);
+  });
+
+  it('angka admin (data induk, akun, impor) punya definisi dan sumber', async () => {
+    const admin = await loginAs(app, fx.emails.admin);
+    const res = await admin.get(api('/dashboard/summary')).expect(200);
+    const byKey = Object.fromEntries(res.body.metrics.map((m: { key: string }) => [m.key, m]));
+    for (const key of ['students_active', 'employees_active', 'students_without_guardian', 'guardian_links_pending', 'invitations_open', 'invitations_expired', 'profile_corrections_pending']) {
+      expect(byKey[key], key).toBeTruthy();
+      expect(byKey[key].definition.length).toBeGreaterThan(10);
+      expect(byKey[key].source.length).toBeGreaterThan(2);
+    }
+    expect(byKey.students_active.value).toBe(4);
+  });
+});

@@ -1,9 +1,9 @@
-import { ATTENDANCE_STATUS_LABELS, ATTENDANCE_STATUSES, type PersonalAttendance, type PublishedTimetable } from "@smart-school/contracts";
+import { ATTENDANCE_STATUS_LABELS, ATTENDANCE_STATUSES, SCHEDULE_EXCEPTION_LABELS, WEEKDAY_LABELS, type PersonalAttendance, type PortalClassTimetable } from "@smart-school/contracts";
 import { WeekTimetable } from "@/components/academics/week-timetable";
 import { ApiErrorState, EmptyState } from "@/components/page-states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiGet } from "@/lib/api-server";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { AttendanceBadge } from "./status";
 
 /** Kehadiran pribadi (siswa) atau anak (wali, perlu izin absensi). Default 30 hari terakhir. */
@@ -58,17 +58,42 @@ export async function PersonalAttendanceView({ studentId }: { studentId?: string
 
 /** Jadwal kelas siswa atau anak (wali, izin akademik). */
 export async function ClassTimetableView({ studentId }: { studentId?: string }) {
-  const res = await apiGet<PublishedTimetable & { classGroup: { code: string } | null }>(`/me/class-timetable${studentId ? `?studentId=${studentId}` : ""}`);
+  const res = await apiGet<PortalClassTimetable>(`/me/class-timetable${studentId ? `?studentId=${studentId}` : ""}`);
   if (!res.ok) return <ApiErrorState status={res.status} error={res.error} />;
   if (!res.data.classGroup) return <EmptyState title="Belum ditempatkan di rombel" description="Jadwal tampil setelah siswa ditempatkan di rombel oleh bagian akademik." />;
   if (!res.data.slots.length) return <EmptyState title="Jadwal belum diterbitkan" description={`Rombel ${res.data.classGroup.code}. Jadwal tampil setelah bagian kurikulum menerbitkannya.`} />;
+  const t = res.data;
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-foreground">
-        Rombel {res.data.classGroup.code}
-        {res.data.term && ` · ${res.data.term.name}`}
+        Rombel {t.classGroup!.code}
+        {t.term && ` · ${t.term.name}`}
+        {t.versionNo && ` · versi ${t.versionNo}`}
+        {t.effectiveFrom && `, berlaku ${formatDate(t.effectiveFrom)}`}
+        {t.publishedAt && ` · diperbarui ${formatDateTime(t.publishedAt)}`}
       </p>
-      <WeekTimetable slots={res.data.slots} show="teacher" />
+      <section aria-label="Perubahan jadwal" className={`rounded-2xl border p-3 ${t.changes.length ? "border-primary bg-accent" : "bg-card"}`}>
+        <h2 className="text-sm font-semibold">Perubahan jadwal 14 hari ke depan</h2>
+        {t.changes.length ? (
+          <ul className="mt-1 flex flex-col gap-1 text-sm">
+            {t.changes.map((c) => (
+              <li key={c.id}>
+                <span className="font-medium">
+                  {WEEKDAY_LABELS[c.weekday]}, {formatDate(c.date)} · {c.startTime} {c.subject.name}
+                </span>
+                {": "}
+                <span className="font-semibold">{SCHEDULE_EXCEPTION_LABELS[c.kind]}</span>
+                {c.substitute && `, diajar ${c.substitute.fullName}`}
+                {c.room && `, di ruang ${c.room.code}`}
+                <span className="text-muted-foreground"> ({c.reason})</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1 text-sm text-muted-foreground">Tidak ada pertemuan yang dibatalkan atau diganti.</p>
+        )}
+      </section>
+      <WeekTimetable slots={t.slots} show="teacher" />
     </div>
   );
 }

@@ -77,7 +77,7 @@ export function GlobalSearch({ menu }: { menu: MenuItem[] }) {
   const activeId = options[activeIndex] ? `${listId}-${active}` : undefined;
 
   return (
-    <div className="relative w-full max-w-xl">
+    <div className="relative w-full max-w-xl min-w-0">
       <Search aria-hidden="true" className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
       <input
         ref={inputRef}
@@ -112,7 +112,7 @@ export function GlobalSearch({ menu }: { menu: MenuItem[] }) {
             setOpen(false);
           }
         }}
-        className="h-9 w-full rounded-lg border border-input bg-background pr-14 pl-8 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
+        className="h-9 w-full min-w-0 rounded-lg border border-input bg-background pr-2 pl-8 text-sm sm:pr-14 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
       />
       <kbd className="pointer-events-none absolute top-1/2 right-2 hidden -translate-y-1/2 rounded border bg-muted px-1.5 text-[10px] text-muted-foreground sm:block">Ctrl K</kbd>
       {open && (q.trim().length > 0 || options.length > 0) && (

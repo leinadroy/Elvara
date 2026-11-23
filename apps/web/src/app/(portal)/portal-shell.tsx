@@ -33,7 +33,7 @@ export async function PortalHeader() {
   const me = await getMe();
   return (
     <>
-      <div className="flex items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1">
         <SidebarToggle side="left" />
         <Link href={homeFor(me.activeRole)} className="hidden rounded-md px-1 sm:block" aria-label="Elvara, ke beranda">
           <Logo />
@@ -43,7 +43,7 @@ export async function PortalHeader() {
       <div className="flex min-w-0 flex-1 justify-center px-2">
         <GlobalSearch menu={menuFor(me)} />
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1">
         <NotificationBell />
         <ThemeSwitcher />
         <RoleSwitcher roles={me.roles} activeRole={me.activeRole} />

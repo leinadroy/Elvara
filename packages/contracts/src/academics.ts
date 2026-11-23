@@ -244,6 +244,15 @@ export const TimetableQuerySchema = z.object({
   classGroupId: z.uuid().optional(),
 });
 
+/** Jadwal kelas untuk portal siswa/wali: jadwal terbit + waktu pembaruan + perubahan pertemuan 14 hari ke depan (E5). */
+export interface PortalClassTimetable extends PublishedTimetable {
+  classGroup: { id: string; code: string } | null;
+  versionNo: number | null;
+  publishedAt: string | null;
+  effectiveFrom: string | null;
+  changes: ScheduleExceptionView[];
+}
+
 /** Jadwal terbit yang sudah disaring untuk portal siswa, guru, wali. */
 export interface PublishedTimetable {
   term: { id: string; name: string } | null;

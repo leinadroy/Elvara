@@ -82,10 +82,10 @@ export class AttendanceService {
     const weekday = isoDayOfWeek(date);
     const emp = await this.scope.employee(auth);
     const term = await this.timetable.termOn(auth.schoolId, date);
-    if (!emp) return { date, weekday, term, lessons: [], homeroomClasses: [] };
+    if (!emp) return { date, weekday, term, lessons: [], homeroomClasses: [], adHocSessions: [] };
     const day = toDbDate(date);
     const versionWhere = { termId: term?.id, status: 'PUBLISHED' as const, OR: [{ effectiveFrom: null }, { effectiveFrom: { lte: day } }] };
-    const [slots, homerooms] = await Promise.all([
+    const [slots, homerooms, adHoc] = await Promise.all([
       term
         ? this.prisma.timetableSlot.findMany({
             where: {
@@ -104,12 +104,18 @@ export class AttendanceService {
           })
         : [],
       this.prisma.homeroomAssignment.findMany({ where: { employeeId: emp.id, ...validOn(date) }, select: { classGroup: { select: { id: true, code: true } } } }),
+      this.prisma.studentAttendanceSession.findMany({
+        where: { takenById: emp.id, kind: 'AD_HOC', sessionDate: day },
+        select: { id: true, reason: true, status: true, classGroup: { select: { id: true, code: true } }, records: { select: { status: true } } },
+        orderBy: { createdAt: 'asc' },
+      }),
     ]);
     return {
       date,
       weekday,
       term,
       homeroomClasses: homerooms.map((h) => h.classGroup),
+      adHocSessions: adHoc.map((x) => ({ id: x.id, classGroup: x.classGroup, reason: x.reason, status: x.status, filled: x.records.filter((r) => r.status).length, total: x.records.length })),
       lessons: slots.map((s) => {
         const session = s.attendanceSessions[0];
         const ex = s.exceptions[0];
