@@ -28,8 +28,10 @@ export const ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = {
     'attendance:read',
     'attendance:manage',
     'announcements:publish',
+    'work-shifts:read',
+    'work-shifts:manage',
   ],
-  MANAGEMENT: ['school:read', 'academic-years:read', 'people:read', 'audit:read', 'classes:read', 'timetable:read', 'attendance:read', 'announcements:publish'],
+  MANAGEMENT: ['school:read', 'academic-years:read', 'people:read', 'audit:read', 'classes:read', 'timetable:read', 'attendance:read', 'announcements:publish', 'work-shifts:read'],
   CURRICULUM: [
     'school:read',
     'academic-years:read',

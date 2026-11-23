@@ -1,4 +1,5 @@
 import { ATTENDANCE_STATUS_LABELS, ATTENDANCE_STATUSES, SCHEDULE_EXCEPTION_LABELS, WEEKDAY_LABELS, type PersonalAttendance, type PortalClassTimetable } from "@smart-school/contracts";
+import { connection } from "next/server";
 import { WeekTimetable } from "@/components/academics/week-timetable";
 import { ApiErrorState, EmptyState } from "@/components/page-states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -58,6 +59,8 @@ export async function PersonalAttendanceView({ studentId }: { studentId?: string
 
 /** Jadwal kelas siswa atau anak (wali, izin akademik). */
 export async function ClassTimetableView({ studentId }: { studentId?: string }) {
+  await connection();
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
   const res = await apiGet<PortalClassTimetable>(`/me/class-timetable${studentId ? `?studentId=${studentId}` : ""}`);
   if (!res.ok) return <ApiErrorState status={res.status} error={res.error} />;
   if (!res.data.classGroup) return <EmptyState title="Belum ditempatkan di rombel" description="Jadwal tampil setelah siswa ditempatkan di rombel oleh bagian akademik." />;
@@ -93,7 +96,7 @@ export async function ClassTimetableView({ studentId }: { studentId?: string }) 
           <p className="mt-1 text-sm text-muted-foreground">Tidak ada pertemuan yang dibatalkan atau diganti.</p>
         )}
       </section>
-      <WeekTimetable slots={t.slots} show="teacher" />
+      <WeekTimetable slots={t.slots} show="teacher" today={today} />
     </div>
   );
 }

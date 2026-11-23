@@ -10,11 +10,12 @@ import {
   type PersonalAttendance,
   type PortalClassTimetable,
   type TeacherToday,
+  type WorkShiftView,
 } from "@smart-school/contracts";
 import { OpenSessionButton } from "@/components/attendance/open-session-button";
 import { SessionBadge } from "@/components/attendance/status";
 import { apiGet } from "@/lib/api-server";
-import { formatDateTime } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { Fragment } from "react";
 import { Card } from "./home-dashboard";
 import { StaleNotice } from "./stale-notice";
@@ -133,6 +134,41 @@ async function AttendanceWidget({ studentId, title }: { studentId?: string; titl
   );
 }
 
+/** Tugas/shift hari ini dan berikutnya (blueprint 4.5: jadwal dan lokasi kerja hari ini). */
+async function ShiftsTodayWidget({ hideWhenEmpty }: { hideWhenEmpty: boolean }) {
+  const res = await apiGet<{ from: string; items: WorkShiftView[] }>("/me/work-shifts");
+  if (!res.ok) return <Unavailable title="Tugas hari ini" className="lg:col-span-2" />;
+  const today = res.data.items.filter((s) => s.date === res.data.from);
+  const next = res.data.items.find((s) => s.date > res.data.from && s.status === "SCHEDULED");
+  if (hideWhenEmpty && !today.length) return null;
+  return (
+    <Card title="Tugas hari ini" className="lg:col-span-2" action={<Link href="/staff/schedule" className="text-xs underline">14 hari</Link>}>
+      {today.length ? (
+        <ul className="flex flex-col divide-y text-sm">
+          {today.map((s) => (
+            <li key={s.id} className={`flex flex-wrap gap-3 py-1.5 ${s.status === "CANCELLED" ? "text-muted-foreground" : ""}`}>
+              <span className="w-28 font-mono text-xs tabular-nums">
+                {s.startTime}–{s.endTime}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className={`font-medium ${s.status === "CANCELLED" ? "line-through" : ""}`}>{s.title}</span>
+                <span className="block text-xs text-muted-foreground">{s.status === "CANCELLED" ? `Dibatalkan: ${s.cancelReason}` : (s.room ? `${s.room.code} · ${s.room.name}` : "Lokasi belum ditentukan")}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">Tidak ada tugas hari ini.</p>
+      )}
+      {next && (
+        <p className="text-xs text-muted-foreground">
+          Berikutnya: {next.title}, {formatDate(next.date)} {next.startTime}
+        </p>
+      )}
+    </Card>
+  );
+}
+
 async function AnnouncementsWidget() {
   const res = await apiGet<AnnouncementView[]>("/announcements");
   if (!res.ok) return <Unavailable title="Pengumuman" />;
@@ -190,11 +226,7 @@ export async function RoleWidgets({ me, s }: { me: Me; s: DashboardSummary }) {
           <AttendanceWidget title="Kehadiran saya" />
         </>
       )}
-      {role === "STAFF" && (
-        <Card title="Jadwal tugas" className="lg:col-span-2">
-          <p className="text-sm text-muted-foreground">Jadwal tugas dan shift staf diisi dari modul kehadiran pegawai (rilis R3). Sampai saat itu, ikuti pengumuman internal di bawah.</p>
-        </Card>
-      )}
+      {(role === "STAFF" || role === "TEACHER") && <ShiftsTodayWidget hideWhenEmpty={role === "TEACHER"} />}
       {role === "GUARDIAN" &&
         (s.children ?? []).map((c) => (
           <Fragment key={c.studentId}>

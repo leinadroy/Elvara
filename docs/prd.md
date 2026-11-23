@@ -297,19 +297,19 @@ Rincian: [catatan induk, bagian A](smart_school_master_note.md).
 
 | ID | Keputusan | Memblokir | Pemilik |
 | --- | --- | --- | --- |
-| D1 | Jenjang, struktur kelas/jurusan, sistem semester | R0 | [__] |
+| D1 | Jenjang, struktur kelas/jurusan, sistem semester | R0 | Diputuskan: [ADR 0001](adr/0001-d1-struktur-kelas.md) |
 | D2 | Sumber data awal, format NIS/NIP, pemilik koreksi data | R0 | [__] |
 | D3 | Kebijakan hubungan wali ganda dan verifikasi identitas wali | R0 | [__] |
-| D4 | Aturan absensi: batas koreksi, persetujuan, keterlambatan, waktu notifikasi | R1 | [__] |
+| D4 | Aturan absensi: batas koreksi, persetujuan, keterlambatan, waktu notifikasi | R1 | Diputuskan: [ADR 0002](adr/0002-d4-aturan-absensi.md) |
 | D5 | Struktur biaya, gateway pembayaran, rekonsiliasi, pembatalan | R3 | [__] |
 | D6 | SOP keselamatan, petugas siaga, SLA respons, retensi catatan sensitif | R4 | [__] |
 | D7 | Perangkat yang benar-benar tersedia: QR/NFC, akses gerbang, CCTV, lokasi | R4 | [__] |
-| D8 | Kanal notifikasi, penyedia, biaya, preferensi penerima | R1 | [__] |
+| D8 | Kanal notifikasi, penyedia, biaya, preferensi penerima | R1 | Diputuskan (dalam aplikasi dulu): [ADR 0003](adr/0003-d8-kanal-notifikasi.md) |
 | D9 | Kapasitas pengguna, jam sibuk, target ketersediaan, RPO/RTO | Go-live | [__] |
 | D10 | Kebutuhan aplikasi native/offline setelah uji web responsif | Pasca-pilot | [__] |
-| D11 | Format rapor dan aturan publikasi nilai | R2 | [__] |
+| D11 | Format rapor dan aturan publikasi nilai | R2 | Diputuskan (Kurikulum Merdeka): [ADR 0005](adr/0005-d11-penilaian-rapor.md) |
 
-Setiap keputusan dicatat sebagai ADR singkat di `docs/` lalu diturunkan menjadi skema Prisma, kontrak API, dan acceptance criteria.
+Setiap keputusan dicatat sebagai ADR singkat di [`docs/adr/`](adr/README.md) lalu diturunkan menjadi skema Prisma, kontrak API, dan acceptance criteria.
 
 ## 13. Rencana pilot
 

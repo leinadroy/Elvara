@@ -225,6 +225,8 @@ model Room {
 
   scheduleExceptions ScheduleException[]
 
+  workShifts WorkShift[]
+
   @@unique([buildingId, code])
   @@map("room")
 }
@@ -433,6 +435,8 @@ model Employee {
   attendanceSessions  StudentAttendanceSession[]
 
   substituteExceptions ScheduleException[]
+
+  workShifts WorkShift[]
 
   @@unique([schoolId, employeeNumber])
   @@unique([schoolId, nip])
@@ -805,6 +809,35 @@ model ScheduleException {
   @@unique([timetableSlotId, exceptionDate])
   @@index([schoolId, exceptionDate])
   @@map("schedule_exception")
+}
+
+enum WorkShiftStatus {
+  SCHEDULED
+  CANCELLED
+}
+
+/// Tugas staf pada satu waktu dan lokasi (blueprint work_shift). R1 diisi admin per tanggal (ADR 0004).
+/// Tugas yang bentrok untuk pegawai yang sama ditolak; tugas dibatalkan, bukan dihapus.
+model WorkShift {
+  id           String          @id @default(uuid()) @db.Uuid
+  schoolId     String          @db.Uuid
+  employeeId   String          @db.Uuid
+  employee     Employee        @relation(fields: [employeeId], references: [id])
+  title        String
+  startsAt     DateTime
+  endsAt       DateTime
+  roomId       String?         @db.Uuid
+  room         Room?           @relation(fields: [roomId], references: [id])
+  status       WorkShiftStatus @default(SCHEDULED)
+  note         String?
+  cancelReason String?
+  createdById  String          @db.Uuid
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([employeeId, startsAt])
+  @@index([schoolId, startsAt])
+  @@map("work_shift")
 }
 
 // ───────────── D. Absensi siswa ─────────────

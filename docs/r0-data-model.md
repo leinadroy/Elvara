@@ -107,7 +107,7 @@ Profil orang (`person`) terpisah dari akun login (`user_account`). Satu orang bi
 
 Impor aman diulang: baris dengan NIS dan nama yang sama dengan data yang ada ditandai `SKIPPED`, tidak dibuat ganda.
 
-## R1 MVP Operasional (19 tabel)
+## R1 MVP Operasional (20 tabel)
 
 Ditambahkan setelah keputusan D1 (tingkat dan program diatur sekolah), D4 (guru bebas mengubah absensi sampai 23.59 hari sesi, sesudahnya lewat koreksi), dan D8 (notifikasi dalam aplikasi dulu). Nama dan pembagian mengikuti `architecture_blueprint/05_database_core_tables.md` bagian B–E.
 
@@ -167,6 +167,12 @@ erDiagram
 | `attendance_correction` | `recordId`, `oldStatus`, `proposedStatus`, `reason`, `requestedById`, `decision` (`PENDING`/`APPROVED`/`REJECTED`), `decidedById`, `decisionNote` | Hanya setelah batas hari. **Satu koreksi menunggu per catatan.** Diputuskan wali kelas rombel atau admin; koreksi milik sendiri diputuskan admin |
 
 **Finalisasi dan notifikasi alpa (FR-7.3).** Status dianggap final saat sesi ditutup, saat catatan pada sesi yang sudah ditutup diubah, saat koreksi disetujui, atau saat batas hari lewat. Untuk yang terakhir, job terjadwal (tiap 10 menit) memberi `finalizedAt` pada sesi yang belum ditutup. Notifikasi alpa dikirim pada saat final itu ke akun wali dengan hubungan `VERIFIED`, masih berlaku, dan `canViewAttendance`; `sourceEventId` = `attendance.absent:<recordId>` sehingga setiap catatan hanya memicu satu notifikasi.
+
+### Pekerjaan pegawai (FR-8.5, [ADR 0004](adr/0004-jadwal-tugas-staf.md))
+
+| Tabel | Kolom utama | Aturan |
+| --- | --- | --- |
+| `work_shift` | `employeeId`, `title`, `startsAt`, `endsAt`, `roomId` (lokasi), `status` (`SCHEDULED`/`CANCELLED`), `note`, `cancelReason` | Tugas staf per waktu dan lokasi, diisi admin. Disimpan sebagai instan UTC, ditampilkan dalam jam sekolah. Tugas terjadwal yang bentrok untuk pegawai yang sama ditolak; selesai > mulai dan alasan wajib saat dibatalkan (CHECK). R3 menambah `work_schedule` (pola mingguan) yang menghasilkan baris ini |
 
 ### E. Komunikasi
 

@@ -12,6 +12,7 @@ import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, type RoleKey } from '../src/generated/prisma/client.js';
 import { hashPassword } from '../src/auth/crypto.js';
+import { addDays, atTimeIn, todayIn } from '../src/common/school-time.js';
 
 const DEV_PASSWORD = process.env.SEED_PASSWORD ?? 'SmartSchool#2026';
 
@@ -206,6 +207,28 @@ async function main() {
   }
 
   const admin = await prisma.user.findUniqueOrThrow({ where: { email: 'admin@smartschool.test' } });
+
+  // Staf non-guru dengan jadwal tugas 7 hari mulai hari ini (ADR 0004).
+  await employee('P-005', 'Staf Tata Usaha', 'Staf Tata Usaha', false, 'staf@smartschool.test', ['STAFF']);
+  const stafId = await emp('P-005');
+  if (!(await prisma.workShift.findFirst({ where: { employeeId: stafId } }))) {
+    const tz = school.timezone;
+    const start = todayIn(tz);
+    const gate = await prisma.room.findFirst({ where: { code: 'A-TU', floor: { building: { schoolId: school.id } } } });
+    const lib = await prisma.room.findFirst({ where: { code: 'B-PUS', floor: { building: { schoolId: school.id } } } });
+    for (let i = 0; i < 7; i++) {
+      const day = addDays(start, i);
+      const shifts: [string, string, string, string | null][] = [
+        ['Layanan tata usaha', '07:00', '12:00', gate?.id ?? null],
+        ['Jaga perpustakaan', '12:30', '15:00', lib?.id ?? null],
+      ];
+      for (const [title, from, to, roomId] of shifts) {
+        await prisma.workShift.create({ data: { schoolId: school.id, employeeId: stafId, title, startsAt: atTimeIn(day, from, tz), endsAt: atTimeIn(day, to, tz), roomId, createdById: admin.id } });
+      }
+    }
+    // Guru piket gerbang hari ini.
+    await prisma.workShift.create({ data: { schoolId: school.id, employeeId: guruId, title: 'Piket gerbang pagi', startsAt: atTimeIn(start, '06:30', tz), endsAt: atTimeIn(start, '07:00', tz), roomId: null, createdById: admin.id } });
+  }
   if (!(await prisma.announcement.findFirst({ where: { schoolId: school.id } }))) {
     await prisma.announcement.create({
       data: {

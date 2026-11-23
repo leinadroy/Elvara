@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { connection } from "next/server";
 import { Suspense } from "react";
 import {
   SCHEDULE_EXCEPTION_LABELS,
@@ -62,6 +63,7 @@ function DraftSlots({ slots, conflictIds, editable }: { slots: TimetableSlotView
 }
 
 async function ClassView({ sp, canManage }: { sp: Record<string, string | undefined>; canManage: boolean }) {
+  await connection();
   const options = await getAcademicOptions();
   const term = pickTerm(options, sp.termId);
   const classes = await getClasses(options?.academicYear?.id);
@@ -101,7 +103,7 @@ async function ClassView({ sp, canManage }: { sp: Record<string, string | undefi
             </p>
           )}
         </div>
-        {t.published ? <WeekTimetable slots={t.published.slots} show="teacher" highlightToday={false} /> : <p className="text-sm text-muted-foreground">Belum ada jadwal terbit untuk rombel ini.</p>}
+        {t.published ? <WeekTimetable slots={t.published.slots} show="teacher" /> : <p className="text-sm text-muted-foreground">Belum ada jadwal terbit untuk rombel ini.</p>}
       </section>
 
       <section className="flex flex-col gap-3 rounded-2xl border bg-card p-4">
@@ -220,7 +222,7 @@ async function LensView({ sp, kind }: { sp: Record<string, string | undefined>; 
       <p className="text-sm text-muted-foreground">
         Jadwal terbit {chosen.label} · {term.name} · {res.data.slots.length} pertemuan per minggu
       </p>
-      {res.data.slots.length ? <WeekTimetable slots={res.data.slots} show={kind === "guru" ? "class" : "both"} highlightToday={false} /> : <EmptyState title="Tidak ada pertemuan terjadwal" />}
+      {res.data.slots.length ? <WeekTimetable slots={res.data.slots} show={kind === "guru" ? "class" : "both"} /> : <EmptyState title="Tidak ada pertemuan terjadwal" />}
     </>
   );
 }

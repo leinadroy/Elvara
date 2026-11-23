@@ -369,3 +369,45 @@ describe('R1 pelengkap: sesi tambahan, perubahan jadwal di portal, angka admin',
     expect(byKey.students_active.value).toBe(4);
   });
 });
+
+describe('R1 jadwal tugas staf (FR-8.5, ADR 0004)', () => {
+  it('admin mengisi tugas, bentrok ditolak, staf melihat tugasnya sendiri, pembatalan beralasan', async () => {
+    const staffId = await user('Staf Tes', 'staf@tes.test', 'STAFF', 'employee');
+    await prisma.employee.update({ where: { id: staffId }, data: { isTeacher: false } });
+    const admin = await loginAs(app, fx.emails.admin);
+    const t = today();
+
+    const a = await admin.post(api('/work-shifts')).send({ employeeId: staffId, title: 'Piket gerbang', date: t, startTime: '06:30', endTime: '07:30' }).expect(201);
+    await admin.post(api('/work-shifts')).send({ employeeId: staffId, title: 'Bentrok', date: t, startTime: '07:00', endTime: '08:00' }).expect(409);
+    await admin.post(api('/work-shifts')).send({ employeeId: staffId, title: 'Jam terbalik', date: t, startTime: '09:00', endTime: '08:00' }).expect(422);
+    await admin.post(api('/work-shifts')).send({ employeeId: staffId, title: 'Jaga perpustakaan', date: t, startTime: '07:30', endTime: '12:00' }).expect(201);
+    await admin.post(api('/work-shifts')).send({ employeeId: r1.teacherEmployeeId, title: 'Piket guru', date: t, startTime: '06:30', endTime: '07:00' }).expect(201);
+
+    // Disimpan sebagai instan UTC, ditampilkan kembali dalam jam sekolah.
+    const row = await prisma.workShift.findUniqueOrThrow({ where: { id: a.body.id } });
+    expect(row.startsAt.toISOString()).toBe(new Date(`${t}T06:30:00+07:00`).toISOString());
+
+    const staff = await loginAs(app, 'staf@tes.test');
+    await staff.post(api('/work-shifts')).send({ employeeId: staffId, title: 'Tidak boleh', date: t, startTime: '13:00', endTime: '14:00' }).expect(403);
+    await staff.get(api(`/work-shifts?from=${t}&to=${t}`)).expect(403);
+    const mine = await staff.get(api('/me/work-shifts')).expect(200);
+    expect(mine.body.items.map((s: { title: string; startTime: string }) => `${s.startTime} ${s.title}`)).toEqual(['06:30 Piket gerbang', '07:30 Jaga perpustakaan']);
+
+    const summary = await staff.get(api('/dashboard/summary')).expect(200);
+    const m = summary.body.metrics.find((x: { key: string }) => x.key === 'work_shifts_today');
+    expect(m).toMatchObject({ value: 2, source: 'work_shift' });
+
+    await admin.post(api(`/work-shifts/${a.body.id}/cancel`)).send({ reason: 'ab' }).expect(422);
+    await admin.post(api(`/work-shifts/${a.body.id}/cancel`)).send({ reason: 'Diganti petugas lain' }).expect(204);
+    await admin.post(api(`/work-shifts/${a.body.id}/cancel`)).send({ reason: 'Diganti petugas lain' }).expect(409);
+    // Slot yang dibatalkan bisa diisi tugas baru.
+    await admin.post(api('/work-shifts')).send({ employeeId: staffId, title: 'Piket gerbang pengganti', date: t, startTime: '06:30', endTime: '07:15' }).expect(201);
+    const after = await staff.get(api('/me/work-shifts')).expect(200);
+    expect(after.body.items.find((s: { id: string }) => s.id === a.body.id)).toMatchObject({ status: 'CANCELLED', cancelReason: 'Diganti petugas lain' });
+    expect((await staff.get(api('/dashboard/summary')).expect(200)).body.metrics.find((x: { key: string }) => x.key === 'work_shifts_today').value).toBe(2);
+
+    // Pimpinan boleh melihat, tidak boleh mengubah.
+    const list = await admin.get(api(`/work-shifts?from=${t}&to=${t}`)).expect(200);
+    expect(list.body).toHaveLength(4);
+  });
+});

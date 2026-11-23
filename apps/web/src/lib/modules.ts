@@ -20,6 +20,7 @@ const ROUTES: [RegExp, ModuleKey][] = [
   [/^\/admin\/dashboard/, "command"],
   [/^\/admin\/employees/, "pegawai"],
   [/^\/admin\/school/, "fasilitas"],
+  [/^\/admin\/staff-schedule/, "pegawai"],
   [/^\/admin\/academic-years/, "akademik"],
   [/^\/admin\/audit/, "command"],
   [/^\/admin\//, "admin"],

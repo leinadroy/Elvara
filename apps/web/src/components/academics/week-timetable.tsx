@@ -4,14 +4,15 @@ import { WEEKDAY_LABELS, type TimetableSlotView } from "@smart-school/contracts"
  * Jadwal seminggu: satu kolom per hari (di ponsel bertumpuk). Senin–Jumat selalu tampil agar pola minggu
  * terbaca; Sabtu/Minggu hanya bila ada slot.
  */
-export function WeekTimetable({ slots, show = "teacher", highlightToday = true }: { slots: TimetableSlotView[]; show?: "teacher" | "class" | "both"; highlightToday?: boolean }) {
-  const today = ((new Date().getDay() + 6) % 7) + 1;
+/** `today` (YYYY-MM-DD, zona sekolah) diisi pemanggil agar komponen tetap murni dan bisa di-prerender. */
+export function WeekTimetable({ slots, show = "teacher", today: todayDate }: { slots: TimetableSlotView[]; show?: "teacher" | "class" | "both"; today?: string }) {
+  const today = todayDate ? ((new Date(`${todayDate}T12:00:00Z`).getUTCDay() + 6) % 7) + 1 : 0;
   const days = [1, 2, 3, 4, 5, 6, 7].filter((d) => d <= 5 || slots.some((s) => s.weekday === d));
   return (
     <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
       {days.map((d) => {
         const daySlots = slots.filter((s) => s.weekday === d).sort((a, b) => a.startTime.localeCompare(b.startTime));
-        const isToday = highlightToday && d === today;
+        const isToday = d === today;
         return (
           <section key={d} aria-label={WEEKDAY_LABELS[d]} className={`flex flex-col gap-1.5 rounded-2xl border bg-card p-3 ${isToday ? "border-primary" : ""}`}>
             <h3 className="flex items-center justify-between text-sm font-semibold">

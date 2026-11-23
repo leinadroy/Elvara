@@ -4,6 +4,7 @@ import type { AuthContext } from '../auth/auth.types.js';
 import { CurrentAuth } from '../auth/decorators.js';
 import { fromDbDate, todayIso } from '../common/dates.js';
 import { MetricsService } from '../academics/metrics.service.js';
+import { WorkShiftsService } from '../staff/work-shifts.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { GuardiansService } from './guardians.service.js';
 
@@ -16,6 +17,7 @@ export class DashboardController {
     private readonly prisma: PrismaService,
     private readonly guardians: GuardiansService,
     private readonly metrics: MetricsService,
+    private readonly shifts: WorkShiftsService,
   ) {}
 
   @Get('summary')
@@ -97,6 +99,12 @@ export class DashboardController {
       ]);
       out.pendingMyCorrection = pending > 0;
       out.myDocumentCount = docs;
+    }
+    if (auth.activeRole === 'STAFF') {
+      const t = await this.shifts.todayCount(auth);
+      if (t.employee) {
+        metrics.push({ key: 'work_shifts_today', label: 'Tugas saya hari ini', value: t.count, href: '/staff/schedule', definition: 'Tugas terjadwal (belum dibatalkan) atas nama Anda yang dimulai hari ini, zona waktu sekolah.', source: 'work_shift' });
+      }
     }
     // Angka R1 dihitung terpisah: bila gagal, ringkasan lain tetap tampil dengan penanda (E8).
     try {

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { connection } from "next/server";
 import { Suspense } from "react";
 import type { ClassGroupDetail, TeachingAssignmentView } from "@smart-school/contracts";
 import { ActionButton } from "@/components/actions";
@@ -17,6 +18,7 @@ export const metadata: Metadata = { title: "Rombel" };
 const ENROLLMENT_STATUS = { ACTIVE: "Aktif", MOVED: "Pindah", ENDED: "Berakhir" } as const;
 
 async function Content({ params, searchParams }: PageProps<"/academics/classes/[classId]">) {
+  await connection();
   const { classId } = await params;
   const sp = flatParams(await searchParams);
   const base = `/academics/classes/${classId}`;

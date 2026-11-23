@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { ATTENDANCE_STATUS_LABELS, ATTENDANCE_STATUSES, type AttendanceRecap, type TeacherToday } from "@smart-school/contracts";
 import { Picker } from "@/components/academics/picker";
@@ -25,6 +26,7 @@ async function classOptions(canReadAll: boolean) {
 }
 
 async function Content({ searchParams }: PageProps<"/academics/attendance-recap">) {
+  await connection();
   const sp = flatParams(await searchParams);
   const me = await getMe();
   const classes = await classOptions(me.permissions.includes("attendance:read") && me.permissions.includes("classes:read"));
