@@ -12,6 +12,12 @@ export const MODULES: Record<ModuleKey, { label: string; infographic: string }> 
 };
 
 const ROUTES: [RegExp, ModuleKey][] = [
+  [/^\/academics/, "akademik"],
+  [/^\/teacher/, "pegawai"],
+  [/^\/staff/, "pegawai"],
+  [/^\/student/, "siswa"],
+  [/^\/(messages|management)/, "command"],
+  [/^\/admin\/dashboard/, "command"],
   [/^\/admin\/employees/, "pegawai"],
   [/^\/admin\/school/, "fasilitas"],
   [/^\/admin\/academic-years/, "akademik"],

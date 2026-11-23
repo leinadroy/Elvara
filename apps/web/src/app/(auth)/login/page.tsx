@@ -21,7 +21,7 @@ export default function LoginPage({ searchParams }: PageProps<"/login">) {
     <main className="flex flex-1 items-center justify-center px-4 py-12">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="text-xl">Masuk ke Smart School</CardTitle>
+          <CardTitle className="text-xl">Masuk ke Elvara</CardTitle>
           <CardDescription>Gunakan email dan kata sandi akun sekolah Anda.</CardDescription>
         </CardHeader>
         <CardContent>

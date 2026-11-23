@@ -1,6 +1,24 @@
 import type { AcademicYearView } from './school.js';
 import type { ChildSummary } from './people.js';
 
+/**
+ * Satu angka di beranda (FR-8.8): setiap angka punya definisi tertulis, sumber data, dan waktu pembaruan
+ * (generatedAt pada ringkasan).
+ */
+export interface DashboardMetric {
+  key: string;
+  label: string;
+  value: number;
+  /** Satuan tampilan, mis. "%" untuk persentase. */
+  unit?: '%';
+  definition: string;
+  source: string;
+  href?: string;
+  /** Angka > 0 perlu perhatian. */
+  warn?: boolean;
+  note?: string;
+}
+
 /** Ringkasan beranda. Setiap bagian hanya terisi bila peran aktif berhak melihatnya. */
 export interface DashboardSummary {
   academicYear: AcademicYearView | null;
@@ -21,4 +39,8 @@ export interface DashboardSummary {
   pendingMyCorrection?: boolean;
   myDocumentCount?: number;
   mfa?: { enabled: boolean; recommended: boolean };
+  /** Angka R1 sesuai peran aktif (FR-8.1–8.7). */
+  metrics?: DashboardMetric[];
+  /** Waktu ringkasan dihitung (ISO). */
+  generatedAt: string;
 }

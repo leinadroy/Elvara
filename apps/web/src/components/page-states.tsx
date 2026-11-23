@@ -15,7 +15,7 @@ export function PageHeader({ title, description, actions, back }: { title: strin
     <header className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3 border-b border-border pb-2">
         <p className="text-xs font-bold tracking-wider text-[var(--module)] uppercase">
-          Smart School <span aria-hidden="true">/</span>{" "}
+          Elvara <span aria-hidden="true">/</span>{" "}
           <Suspense fallback={null}>
             <ModuleEyebrowLabel />
           </Suspense>

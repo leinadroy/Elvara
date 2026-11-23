@@ -42,7 +42,7 @@ export function LoginForm({ next }: { next: string }) {
   if (challenge) {
     return (
       <form key="code" method="post" onSubmit={onCode} noValidate className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">Buka aplikasi autentikator di ponsel Anda, lalu masukkan kode 6 digit untuk Smart School.</p>
+        <p className="text-sm text-muted-foreground">Buka aplikasi autentikator di ponsel Anda, lalu masukkan kode 6 digit untuk Elvara.</p>
         <FormErrorSummary error={form.error} />
         <TextField name="code" label="Kode verifikasi" inputMode="numeric" autoComplete="one-time-code" required placeholder="123456" errors={form.fieldErrors} />
         <Button type="submit" disabled={form.pending} className="w-full">

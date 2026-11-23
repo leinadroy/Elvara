@@ -9,7 +9,7 @@ import { STORAGE_KEYS, THEMES, type ThemeId } from "@/lib/themes";
 export function ThemeSwitcher() {
   // Daftar tema hanya dirender saat menu dibuka (di browser), jadi aman membaca atribut <html> saat inisialisasi.
   const [current, setCurrent] = useState<ThemeId>(() =>
-    typeof document === "undefined" ? "sekolah" : ((document.documentElement.getAttribute("data-theme") as ThemeId | null) ?? "sekolah"),
+    typeof document === "undefined" ? "elvara" : ((document.documentElement.getAttribute("data-theme") as ThemeId | null) ?? "elvara"),
   );
 
   function apply(id: ThemeId) {

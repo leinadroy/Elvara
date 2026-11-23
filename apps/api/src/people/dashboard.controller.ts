@@ -3,6 +3,7 @@ import { MFA_RECOMMENDED_ROLES, type DashboardSummary } from '@smart-school/cont
 import type { AuthContext } from '../auth/auth.types.js';
 import { CurrentAuth } from '../auth/decorators.js';
 import { fromDbDate, todayIso } from '../common/dates.js';
+import { MetricsService } from '../academics/metrics.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { GuardiansService } from './guardians.service.js';
 
@@ -12,6 +13,7 @@ export class DashboardController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly guardians: GuardiansService,
+    private readonly metrics: MetricsService,
   ) {}
 
   @Get('summary')
@@ -35,6 +37,7 @@ export class DashboardController {
         : null,
       currentTermName: term?.name ?? null,
       mfa: { enabled: !!user.mfaSecret, recommended: auth.roles.some((r) => MFA_RECOMMENDED_ROLES.includes(r)) },
+      generatedAt: new Date().toISOString(),
     };
 
     if (auth.permissions.has('people:read')) {
@@ -70,6 +73,7 @@ export class DashboardController {
       out.pendingMyCorrection = pending > 0;
       out.myDocumentCount = docs;
     }
+    out.metrics = await this.metrics.forRole(auth);
     return out;
   }
 }

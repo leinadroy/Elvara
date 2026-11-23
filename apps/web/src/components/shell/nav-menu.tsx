@@ -5,12 +5,12 @@ import { usePathname } from "next/navigation";
 import type { MenuGroup, MenuItem } from "@/lib/menu";
 import { MENU_ICONS } from "./icons";
 
-const ORDER: MenuGroup[] = ["Utama", "Data induk", "Sekolah", "Sistem", "Akun saya"];
+const ORDER: MenuGroup[] = ["Utama", "Kelas & absensi", "Akademik", "Data induk", "Sekolah", "Pesan", "Sistem", "Akun saya"];
 
 /** Menu utama per peran, dikelompokkan. Halaman aktif ditandai untuk pembaca layar (aria-current). */
 export function NavMenu({ items }: { items: MenuItem[] }) {
   const pathname = usePathname();
-  const isActive = (href: string) => pathname === href || (href !== "/dashboard" && href !== "/me" && pathname.startsWith(`${href}/`));
+  const isActive = (href: string) => pathname === href || (!href.endsWith("/dashboard") && href !== "/me" && href !== "/teacher/attendance" && pathname.startsWith(`${href}/`));
   return (
     <nav aria-label="Menu utama" className="flex flex-col gap-3">
       {ORDER.map((group) => {

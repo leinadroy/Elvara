@@ -2,6 +2,7 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { validateEnv } from './config/env.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { HealthController } from './health/health.controller.js';
@@ -16,6 +17,9 @@ import { PeopleModule } from './people/people.module.js';
 import { ImportsModule } from './imports/imports.module.js';
 import { DocumentsModule } from './documents/documents.module.js';
 import { CorrectionsModule } from './corrections/corrections.module.js';
+import { AcademicsModule } from './academics/academics.module.js';
+import { CommunicationsModule } from './communications/communications.module.js';
+import { AttendanceModule } from './attendance/attendance.module.js';
 
 /**
  * Modular monolith: setiap domain menjadi module sendiri dan hanya berbagi data lewat service.
@@ -26,6 +30,7 @@ import { CorrectionsModule } from './corrections/corrections.module.js';
   imports: [
     ConfigModule.forRoot({ isGlobal: true, cache: true, validate: validateEnv }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuditModule,
     AuthModule,
@@ -35,6 +40,9 @@ import { CorrectionsModule } from './corrections/corrections.module.js';
     ImportsModule,
     DocumentsModule,
     CorrectionsModule,
+    AcademicsModule,
+    CommunicationsModule,
+    AttendanceModule,
   ],
   controllers: [HealthController],
   providers: [

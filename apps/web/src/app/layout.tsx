@@ -10,15 +10,15 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Smart School",
-    template: "%s · Smart School",
+    default: "Elvara School Ecosystem",
+    template: "%s · Elvara",
   },
   description: "Platform manajemen sekolah terpadu.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="id" data-theme="sekolah" suppressHydrationWarning className={`${geistMono.variable} h-full antialiased`}>
+    <html lang="id" data-theme="elvara" suppressHydrationWarning className={`${geistMono.variable} h-full antialiased`}>
       <head>
         {/* Tema & status sidebar diterapkan sebelum halaman tampil (tanpa kedipan). */}
         <script dangerouslySetInnerHTML={{ __html: PREFERENCES_SCRIPT }} />

@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { GlobalSearch } from "@/components/shell/global-search";
 import { Logo } from "@/components/shell/icons";
 import { NavMenu } from "@/components/shell/nav-menu";
+import { NotificationBell } from "@/components/shell/notification-bell";
 import { SidebarToggle } from "@/components/shell/sidebar-controls";
 import { ThemeSwitcher } from "@/components/shell/theme-switcher";
 import { RoleSwitcher, UserMenu } from "@/components/shell/user-menu";
@@ -12,22 +13,38 @@ import { Widget } from "@/components/shell/widget";
 import { apiGet, getMe } from "@/lib/api-server";
 import { formatDate } from "@/lib/format";
 import { menuFor } from "@/lib/menu";
+import { homeFor } from "@/lib/areas";
 
-/** Header: kiri logo + cari, kanan tema, ganti peran, dan menu pengguna. */
+/** Konteks sekolah di header (blueprint 04): nama sekolah, tahun ajaran aktif, semester berjalan. */
+async function SchoolContext({ schoolName }: { schoolName: string }) {
+  const res = await apiGet<DashboardSummary>("/dashboard/summary");
+  const y = res.ok ? res.data.academicYear : null;
+  const term = res.ok ? res.data.currentTermName : null;
+  return (
+    <div className="hidden min-w-0 flex-col border-l pl-3 leading-tight lg:flex">
+      <span className="truncate text-sm font-medium">{schoolName}</span>
+      <span className="truncate text-xs text-muted-foreground">{y ? `TA ${y.name}${term ? ` · ${term}` : " · di luar semester"}` : "Belum ada tahun ajaran aktif"}</span>
+    </div>
+  );
+}
+
+/** Header: kiri logo + konteks sekolah, tengah cari, kanan notifikasi, tema, ganti peran, dan menu pengguna. */
 export async function PortalHeader() {
   const me = await getMe();
   return (
     <>
       <div className="flex items-center gap-1">
         <SidebarToggle side="left" />
-        <Link href="/dashboard" className="hidden rounded-md px-1 sm:block" aria-label="Smart School, ke beranda">
+        <Link href={homeFor(me.activeRole)} className="hidden rounded-md px-1 sm:block" aria-label="Elvara, ke beranda">
           <Logo />
         </Link>
+        <SchoolContext schoolName={me.school.name} />
       </div>
       <div className="flex min-w-0 flex-1 justify-center px-2">
         <GlobalSearch menu={menuFor(me)} />
       </div>
       <div className="flex items-center gap-1">
+        <NotificationBell />
         <ThemeSwitcher />
         <RoleSwitcher roles={me.roles} activeRole={me.activeRole} />
         <UserMenu me={me} />

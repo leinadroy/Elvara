@@ -49,12 +49,53 @@
 }
 
 /*
- * Tema. Warna utama "sekolah" mengikuti palet presentasi Smart School (teal tua, oranye, krem hangat).
- * Tema dipilih pengguna di header, disimpan di localStorage, dan diterapkan skrip di <head> sebelum halaman tampil.
- * Setiap pasangan teks/latar dipilih dengan kontras minimal 4.5:1.
+ * Tema. Tema utama "elvara" mengikuti architecture_blueprint (01_visual_language): latar putih hangat, teks charcoal,
+ * slate untuk teks sekunder, burgundy sebagai warna utama, merah proses hanya untuk penanda alur.
+ * Tema lain dipilih pengguna di header, disimpan di localStorage, dan diterapkan skrip di <head> sebelum halaman tampil.
+ * Setiap pasangan teks/latar dipilih dengan kontras minimal 4.5:1. Status selalu teks + warna, tidak warna saja.
  */
 :root,
-[data-theme="sekolah"] {
+[data-theme="elvara"] {
+  --background: #fafaf8;
+  --foreground: #252a2e;
+  --card: #ffffff;
+  --card-foreground: #252a2e;
+  --popover: #ffffff;
+  --popover-foreground: #252a2e;
+  --primary: #7c1025;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f6f7;
+  --secondary-foreground: #252a2e;
+  --muted: #f5f6f7;
+  --muted-foreground: #5f6972;
+  --accent: #f6e8eb;
+  --accent-foreground: #5e0c1c;
+  --destructive: #a4262c;
+  --border: #d9dee1;
+  --input: #d9dee1;
+  --ring: #7c1025;
+  --chart-1: #7c1025;
+  --chart-2: #5f6972;
+  --chart-3: #252a2e;
+  --chart-4: #b0566b;
+  --chart-5: #9aa3aa;
+  --radius: 0.75rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #252a2e;
+  --sidebar-primary: #7c1025;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f6e8eb;
+  --sidebar-accent-foreground: #5e0c1c;
+  --sidebar-border: #d9dee1;
+  --sidebar-ring: #7c1025;
+  /* Merah proses: hanya untuk garis/penanda alur, bukan teks status. */
+  --brand-accent: #d72e3e;
+  --module: #7c1025;
+  --module-tint: #f6e8eb;
+}
+
+/* Tema opsional "Infografis": palet teal dari docs/infographics, dengan warna per modul. */
+[data-theme="infografis"] {
   /* Mengikuti infografis alur (docs/infographics): kertas hangat, tinta gelap, teal modul Administrasi. */
   --background: #fbfaf6;
   --foreground: #14262f;
@@ -244,11 +285,11 @@
  * Warna per modul, sama dengan nomor infografis (docs/infographics.md). Diatur lewat penanda data-module dari layout segmen (lihat module-marker.tsx).
  * Pasangan [warna, tint] diambil dari palet generator infografis.
  */
-#konten:has([data-module="admin"]) { --module: #155e63; --module-tint: #d8eff0; }
-#konten:has([data-module="akademik"]) { --module: #32558c; --module-tint: #e1e9f5; }
-#konten:has([data-module="siswa"]) { --module: #416b52; --module-tint: #e1eee2; }
-#konten:has([data-module="pegawai"]) { --module: #885341; --module-tint: #f5e7df; }
-#konten:has([data-module="fasilitas"]) { --module: #5b5d93; --module-tint: #ebe9f6; }
-#konten:has([data-module="wali"]) { --module: #32558c; --module-tint: #e1e9f5; }
-#konten:has([data-module="command"]) { --module: #425e78; --module-tint: #e1ecf2; }
+html[data-theme="infografis"] #konten:has([data-module="admin"]) { --module: #155e63; --module-tint: #d8eff0; }
+html[data-theme="infografis"] #konten:has([data-module="akademik"]) { --module: #32558c; --module-tint: #e1e9f5; }
+html[data-theme="infografis"] #konten:has([data-module="siswa"]) { --module: #416b52; --module-tint: #e1eee2; }
+html[data-theme="infografis"] #konten:has([data-module="pegawai"]) { --module: #885341; --module-tint: #f5e7df; }
+html[data-theme="infografis"] #konten:has([data-module="fasilitas"]) { --module: #5b5d93; --module-tint: #ebe9f6; }
+html[data-theme="infografis"] #konten:has([data-module="wali"]) { --module: #32558c; --module-tint: #e1e9f5; }
+html[data-theme="infografis"] #konten:has([data-module="command"]) { --module: #425e78; --module-tint: #e1ecf2; }
 html[data-theme="gelap"] #konten:has([data-module]) { --module: var(--primary); --module-tint: var(--secondary); }

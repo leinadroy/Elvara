@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { buttonVariants } from "@/components/ui/button";
+import { homeFor } from "@/lib/areas";
 import { apiSend } from "@/lib/api-client";
 
 function initials(name: string) {
@@ -48,7 +49,7 @@ export function RoleSwitcher({ roles, activeRole }: { roles: RoleKey[]; activeRo
                 start(async () => {
                   const res = await apiSend("POST", "/auth/active-role", { role: r });
                   if (!res.ok) return window.alert(res.error.message);
-                  router.push(r === "GUARDIAN" ? "/guardian/children" : "/dashboard");
+                  router.push(homeFor(r));
                   router.refresh();
                 })
               }

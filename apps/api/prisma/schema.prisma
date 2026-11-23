@@ -1,4 +1,5 @@
-// Skema Prisma Smart School — R0 Fondasi.
+// Skema Prisma Elvara School Ecosystem.
+// Nama tabel tunggal snake_case mengikuti architecture_blueprint/05_database_core_tables.md.
 // Konvensi: UUID sebagai primary key, timestamp UTC, createdAt/updatedAt pada setiap entitas operasional.
 // Identitas login (User) terpisah dari profil orang (Person). Riwayat tidak dihapus: status dan tanggal berlaku.
 // Rujukan: docs/prd.md (E1–E3, E9) dan docs/school_administration_management.md.
@@ -31,27 +32,29 @@ enum RoleKey {
 }
 
 model User {
-  id           String     @id @default(uuid()) @db.Uuid
+  id               String     @id @default(uuid()) @db.Uuid
   /// Disimpan huruf kecil.
-  email        String     @unique
-  passwordHash String?
-  status       UserStatus @default(ACTIVE)
-  personId     String?    @unique @db.Uuid
-  person       Person?    @relation(fields: [personId], references: [id])
-  lastLoginAt  DateTime?
+  email            String     @unique
+  passwordHash     String?
+  status           UserStatus @default(ACTIVE)
+  personId         String?    @unique @db.Uuid
+  person           Person?    @relation(fields: [personId], references: [id])
+  lastLoginAt      DateTime?
   /// Rahasia TOTP terenkripsi (AES-256-GCM dengan APP_SECRET). Null = MFA belum aktif.
   mfaSecret        String?
   /// Rahasia yang sedang disiapkan, menunggu kode pertama yang benar.
   mfaPendingSecret String?
   mfaEnabledAt     DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
 
   roles         UserRole[]
   sessions      Session[]
   mfaChallenges MfaChallenge[]
 
-  @@map("users")
+  notifications Notification[]
+
+  @@map("user_account")
 }
 
 /// Tahap kedua login: dibuat setelah kata sandi benar bila MFA aktif. Berlaku 5 menit, maks. 5 percobaan.
@@ -64,7 +67,7 @@ model MfaChallenge {
   attempts  Int      @default(0)
   createdAt DateTime @default(now())
 
-  @@map("mfa_challenges")
+  @@map("mfa_challenge")
 }
 
 model UserRole {
@@ -78,7 +81,7 @@ model UserRole {
   createdById String?  @db.Uuid
 
   @@unique([userId, role, schoolId])
-  @@map("user_roles")
+  @@map("user_role_assignment")
 }
 
 model Session {
@@ -95,7 +98,7 @@ model Session {
   userAgent  String?
 
   @@index([userId])
-  @@map("sessions")
+  @@map("session")
 }
 
 /// Undangan untuk membuat akun / menautkan wali. Token hanya diperlihatkan sekali saat dibuat.
@@ -118,7 +121,7 @@ model Invitation {
   createdAt         DateTime         @default(now())
 
   @@index([personId])
-  @@map("invitations")
+  @@map("account_invitation")
 }
 
 model AuditEvent {
@@ -137,7 +140,7 @@ model AuditEvent {
   @@index([schoolId, createdAt])
   @@index([entityType, entityId])
   @@index([actorUserId, createdAt])
-  @@map("audit_events")
+  @@map("audit_event")
 }
 
 // ───────────────────────── Sekolah ─────────────────────────
@@ -158,7 +161,7 @@ model School {
   invitations   Invitation[]
   importBatches ImportBatch[]
 
-  @@map("schools")
+  @@map("school")
 }
 
 model Building {
@@ -170,10 +173,11 @@ model Building {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  floors Floor[]
+  floors        Floor[]
+  announcements Announcement[]
 
   @@unique([schoolId, code])
-  @@map("buildings")
+  @@map("building")
 }
 
 model Floor {
@@ -189,7 +193,7 @@ model Floor {
   rooms Room[]
 
   @@unique([buildingId, level])
-  @@map("floors")
+  @@map("floor")
 }
 
 enum RoomType {
@@ -216,8 +220,13 @@ model Room {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  classGroups    ClassGroup[]
+  timetableSlots TimetableSlot[]
+
+  scheduleExceptions ScheduleException[]
+
   @@unique([buildingId, code])
-  @@map("rooms")
+  @@map("room")
 }
 
 enum AcademicYearStatus {
@@ -240,8 +249,10 @@ model AcademicYear {
 
   terms Term[]
 
+  classGroups ClassGroup[]
+
   @@unique([schoolId, name])
-  @@map("academic_years")
+  @@map("academic_year")
 }
 
 model Term {
@@ -255,8 +266,11 @@ model Term {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
+  teachingAssignments TeachingAssignment[]
+  timetableVersions   TimetableVersion[]
+
   @@unique([academicYearId, sequence])
-  @@map("terms")
+  @@map("term")
 }
 
 // ───────────────────────── Orang ─────────────────────────
@@ -291,7 +305,7 @@ model Person {
   correctionRequests ProfileCorrectionRequest[]
 
   @@index([schoolId, fullName])
-  @@map("people")
+  @@map("person")
 }
 
 enum DocumentCategory {
@@ -323,7 +337,7 @@ model PersonDocument {
   deletedById  String?          @db.Uuid
 
   @@index([personId, deletedAt])
-  @@map("person_documents")
+  @@map("person_document")
 }
 
 enum CorrectionStatus {
@@ -352,7 +366,7 @@ model ProfileCorrectionRequest {
 
   @@index([schoolId, status, createdAt])
   @@index([personId, status])
-  @@map("profile_correction_requests")
+  @@map("profile_correction_request")
 }
 
 enum StudentStatus {
@@ -378,10 +392,13 @@ model Student {
 
   guardians StudentGuardian[]
 
+  enrollments       Enrollment[]
+  attendanceRecords StudentAttendanceRecord[]
+
   @@unique([schoolId, nis])
   @@unique([schoolId, nisn])
   @@index([schoolId, status])
-  @@map("students")
+  @@map("student")
 }
 
 enum EmploymentType {
@@ -411,10 +428,16 @@ model Employee {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
+  homeroomAssignments HomeroomAssignment[]
+  teachingAssignments TeachingAssignment[]
+  attendanceSessions  StudentAttendanceSession[]
+
+  substituteExceptions ScheduleException[]
+
   @@unique([schoolId, employeeNumber])
   @@unique([schoolId, nip])
   @@index([schoolId, status])
-  @@map("employees")
+  @@map("employee")
 }
 
 model Guardian {
@@ -428,7 +451,7 @@ model Guardian {
 
   students StudentGuardian[]
 
-  @@map("guardians")
+  @@map("guardian")
 }
 
 enum GuardianRelationship {
@@ -469,7 +492,7 @@ model StudentGuardian {
 
   @@unique([studentId, guardianId])
   @@index([guardianId, status])
-  @@map("student_guardians")
+  @@map("student_guardian")
 }
 
 // ───────────────────────── Impor ─────────────────────────
@@ -502,7 +525,7 @@ model ImportBatch {
   rows ImportRowResult[]
 
   @@index([schoolId, createdAt])
-  @@map("import_batches")
+  @@map("import_batch")
 }
 
 model ImportRowResult {
@@ -515,5 +538,498 @@ model ImportRowResult {
   entityId  String?         @db.Uuid
 
   @@index([batchId, rowNumber])
-  @@map("import_row_results")
+  @@map("import_row_result")
+}
+
+// ═════════════════════════ R1 MVP Operasional ═════════════════════════
+// Mengikuti architecture_blueprint/05_database_core_tables.md bagian B (struktur kelas), C (akademik:
+// subject, teaching_assignment, timetable_version, timetable_slot), D (absensi siswa) dan E (komunikasi).
+// Keputusan sekolah: D1 tingkat & program diatur admin; D4 guru bebas ubah absensi sampai akhir hari sesi,
+// sesudahnya lewat koreksi; D8 notifikasi dalam aplikasi dulu.
+
+// ───────────── B. Struktur kelas ─────────────
+
+model GradeLevel {
+  id        String   @id @default(uuid()) @db.Uuid
+  schoolId  String   @db.Uuid
+  code      String
+  /// Urutan tingkat (1, 2, 3 …).
+  ordinal   Int
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  classGroups ClassGroup[]
+
+  @@unique([schoolId, code])
+  @@unique([schoolId, ordinal])
+  @@map("grade_level")
+}
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+}
+
+/// Program/jurusan; opsional menurut jenjang.
+model Program {
+  id        String       @id @default(uuid()) @db.Uuid
+  schoolId  String       @db.Uuid
+  code      String
+  name      String
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  classGroups ClassGroup[]
+
+  @@unique([schoolId, code])
+  @@map("program")
+}
+
+/// Rombongan belajar per tahun ajaran.
+model ClassGroup {
+  id             String       @id @default(uuid()) @db.Uuid
+  schoolId       String       @db.Uuid
+  academicYearId String       @db.Uuid
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  gradeLevelId   String       @db.Uuid
+  gradeLevel     GradeLevel   @relation(fields: [gradeLevelId], references: [id])
+  programId      String?      @db.Uuid
+  program        Program?     @relation(fields: [programId], references: [id])
+  /// Kode rombel, mis. 7A.
+  code           String
+  capacity       Int          @default(32)
+  mainRoomId     String?      @db.Uuid
+  mainRoom       Room?        @relation(fields: [mainRoomId], references: [id])
+  status         RecordStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  enrollments         Enrollment[]
+  homeroomAssignments HomeroomAssignment[]
+  teachingAssignments TeachingAssignment[]
+  timetableVersions   TimetableVersion[]
+  attendanceSessions  StudentAttendanceSession[]
+  announcements       Announcement[]
+
+  @@unique([academicYearId, code])
+  @@map("class_group")
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  ENDED
+  MOVED
+}
+
+/// Penempatan siswa ke rombel dengan rentang berlaku. Satu rombel utama aktif per siswa per tanggal.
+model Enrollment {
+  id           String           @id @default(uuid()) @db.Uuid
+  studentId    String           @db.Uuid
+  student      Student          @relation(fields: [studentId], references: [id])
+  classGroupId String           @db.Uuid
+  classGroup   ClassGroup       @relation(fields: [classGroupId], references: [id])
+  validFrom    DateTime         @db.Date
+  /// Inklusif. Null = masih berlaku.
+  validTo      DateTime?        @db.Date
+  status       EnrollmentStatus @default(ACTIVE)
+  reason       String?
+  createdById  String?          @db.Uuid
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  attendanceRecords StudentAttendanceRecord[]
+
+  @@index([studentId, validFrom])
+  @@index([classGroupId, validFrom])
+  @@map("enrollment")
+}
+
+/// Riwayat wali kelas.
+model HomeroomAssignment {
+  id           String     @id @default(uuid()) @db.Uuid
+  classGroupId String     @db.Uuid
+  classGroup   ClassGroup @relation(fields: [classGroupId], references: [id])
+  employeeId   String     @db.Uuid
+  employee     Employee   @relation(fields: [employeeId], references: [id])
+  validFrom    DateTime   @db.Date
+  validTo      DateTime?  @db.Date
+  createdById  String?    @db.Uuid
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([classGroupId, validFrom])
+  @@index([employeeId])
+  @@map("homeroom_assignment")
+}
+
+// ───────────── C. Mata pelajaran, penugasan, jadwal ─────────────
+
+model Subject {
+  id        String       @id @default(uuid()) @db.Uuid
+  schoolId  String       @db.Uuid
+  code      String
+  name      String
+  /// Kelompok mapel opsional (mis. Umum, Muatan lokal).
+  groupCode String?
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  teachingAssignments TeachingAssignment[]
+
+  @@unique([schoolId, code])
+  @@map("subject")
+}
+
+enum TeachingRole {
+  MAIN
+  ASSISTANT
+}
+
+/// Guru × mapel × rombel × semester. Guru hanya mengajar (dan mengisi absensi) dalam penugasannya.
+model TeachingAssignment {
+  id            String       @id @default(uuid()) @db.Uuid
+  schoolId      String       @db.Uuid
+  termId        String       @db.Uuid
+  term          Term         @relation(fields: [termId], references: [id])
+  classGroupId  String       @db.Uuid
+  classGroup    ClassGroup   @relation(fields: [classGroupId], references: [id])
+  subjectId     String       @db.Uuid
+  subject       Subject      @relation(fields: [subjectId], references: [id])
+  employeeId    String       @db.Uuid
+  employee      Employee     @relation(fields: [employeeId], references: [id])
+  teachingRole  TeachingRole @default(MAIN)
+  /// Target jam pelajaran per minggu.
+  weeklyPeriods Int          @default(2)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  timetableSlots     TimetableSlot[]
+  attendanceSessions StudentAttendanceSession[]
+
+  @@unique([termId, classGroupId, subjectId, employeeId])
+  @@index([employeeId, termId])
+  @@map("teaching_assignment")
+}
+
+/// Jam pelajaran (bel) sekolah. Pembantu penyusunan jadwal; slot jadwal tetap menyimpan jam mulai/selesai.
+model LessonPeriod {
+  id        String   @id @default(uuid()) @db.Uuid
+  schoolId  String   @db.Uuid
+  sequence  Int
+  /// HH:MM, zona waktu sekolah.
+  startTime String
+  endTime   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, sequence])
+  @@map("lesson_period")
+}
+
+enum TimetableStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+}
+
+/// Versi jadwal per rombel per semester. Satu versi terbit berlaku; terbit baru menggantikan yang lama.
+model TimetableVersion {
+  id            String          @id @default(uuid()) @db.Uuid
+  schoolId      String          @db.Uuid
+  termId        String          @db.Uuid
+  term          Term            @relation(fields: [termId], references: [id])
+  classGroupId  String          @db.Uuid
+  classGroup    ClassGroup      @relation(fields: [classGroupId], references: [id])
+  versionNo     Int
+  status        TimetableStatus @default(DRAFT)
+  effectiveFrom DateTime?       @db.Date
+  publishedAt   DateTime?
+  publishedById String?         @db.Uuid
+  createdById   String?         @db.Uuid
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  slots TimetableSlot[]
+
+  @@unique([termId, classGroupId, versionNo])
+  @@map("timetable_version")
+}
+
+/// Satu pertemuan mingguan. Benturan guru/rombel/ruang diperiksa saat versi diterbitkan.
+model TimetableSlot {
+  id                   String             @id @default(uuid()) @db.Uuid
+  versionId            String             @db.Uuid
+  version              TimetableVersion   @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  teachingAssignmentId String             @db.Uuid
+  teachingAssignment   TeachingAssignment @relation(fields: [teachingAssignmentId], references: [id])
+  roomId               String?            @db.Uuid
+  room                 Room?              @relation(fields: [roomId], references: [id])
+  /// 1 = Senin … 6 = Sabtu.
+  weekday              Int
+  /// HH:MM, zona waktu sekolah.
+  startTime            String
+  endTime              String
+  createdAt            DateTime           @default(now())
+
+  attendanceSessions StudentAttendanceSession[]
+  exceptions         ScheduleException[]
+
+  @@index([versionId, weekday])
+  @@map("timetable_slot")
+}
+
+enum ScheduleExceptionKind {
+  CANCELLED
+  SUBSTITUTED
+}
+
+/// Perubahan satu pertemuan pada satu tanggal (batal atau diganti guru/ruang) tanpa mengubah jadwal mingguan (FR-5.5).
+model ScheduleException {
+  id                   String                @id @default(uuid()) @db.Uuid
+  schoolId             String                @db.Uuid
+  timetableSlotId      String                @db.Uuid
+  timetableSlot        TimetableSlot         @relation(fields: [timetableSlotId], references: [id], onDelete: Cascade)
+  exceptionDate        DateTime              @db.Date
+  kind                 ScheduleExceptionKind
+  substituteEmployeeId String?               @db.Uuid
+  substituteEmployee   Employee?             @relation(fields: [substituteEmployeeId], references: [id])
+  roomId               String?               @db.Uuid
+  room                 Room?                 @relation(fields: [roomId], references: [id])
+  reason               String
+  createdById          String                @db.Uuid
+  createdAt            DateTime              @default(now())
+
+  @@unique([timetableSlotId, exceptionDate])
+  @@index([schoolId, exceptionDate])
+  @@map("schedule_exception")
+}
+
+// ───────────── D. Absensi siswa ─────────────
+
+enum AttendanceStatus {
+  PRESENT
+  EXCUSED
+  SICK
+  ABSENT
+  LATE
+}
+
+enum AttendanceSessionKind {
+  SCHEDULED
+  AD_HOC
+}
+
+enum AttendanceSessionStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+/// Sesi absensi kelas. Sesi dibatalkan tidak dihitung dalam rekap.
+model StudentAttendanceSession {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  schoolId             String                  @db.Uuid
+  classGroupId         String                  @db.Uuid
+  classGroup           ClassGroup              @relation(fields: [classGroupId], references: [id])
+  timetableSlotId      String?                 @db.Uuid
+  timetableSlot        TimetableSlot?          @relation(fields: [timetableSlotId], references: [id])
+  teachingAssignmentId String?                 @db.Uuid
+  teachingAssignment   TeachingAssignment?     @relation(fields: [teachingAssignmentId], references: [id])
+  sessionDate          DateTime                @db.Date
+  startsAt             DateTime?
+  kind                 AttendanceSessionKind
+  /// Wajib untuk sesi tambahan dan pembatalan.
+  reason               String?
+  status               AttendanceSessionStatus @default(OPEN)
+  takenById            String                  @db.Uuid
+  takenBy              Employee                @relation(fields: [takenById], references: [id])
+  closedAt             DateTime?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+
+  records StudentAttendanceRecord[]
+
+  @@unique([timetableSlotId, sessionDate])
+  @@index([classGroupId, sessionDate])
+  @@map("student_attendance_session")
+}
+
+/**
+ * Peserta sesi sekaligus catatan kehadirannya (gabungan session_participant + student_attendance_record
+ * pada blueprint). Peserta diambil dari penempatan yang berlaku pada tanggal sesi saat sesi dibuka,
+ * sehingga tidak berubah diam-diam bila siswa pindah kelas. status null = belum diisi (bukan alpa).
+ */
+model StudentAttendanceRecord {
+  id           String                   @id @default(uuid()) @db.Uuid
+  sessionId    String                   @db.Uuid
+  session      StudentAttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  studentId    String                   @db.Uuid
+  student      Student                  @relation(fields: [studentId], references: [id])
+  enrollmentId String                   @db.Uuid
+  enrollment   Enrollment               @relation(fields: [enrollmentId], references: [id])
+  status       AttendanceStatus?
+  note         String?
+  /// Naik setiap kali status berubah.
+  versionNo    Int                      @default(0)
+  finalizedAt  DateTime?
+  updatedById  String?                  @db.Uuid
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+
+  corrections AttendanceCorrection[]
+
+  @@unique([sessionId, studentId])
+  @@index([studentId])
+  @@map("student_attendance_record")
+}
+
+enum CorrectionDecision {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Koreksi setelah batas hari sesi: nilai lama, nilai usulan, alasan, pengaju, dan pemutus.
+model AttendanceCorrection {
+  id             String                  @id @default(uuid()) @db.Uuid
+  recordId       String                  @db.Uuid
+  record         StudentAttendanceRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  oldStatus      AttendanceStatus?
+  proposedStatus AttendanceStatus
+  reason         String
+  requestedById  String                  @db.Uuid
+  decision       CorrectionDecision      @default(PENDING)
+  decidedById    String?                 @db.Uuid
+  decidedAt      DateTime?
+  decisionNote   String?
+  createdAt      DateTime                @default(now())
+
+  @@index([decision, createdAt])
+  @@map("attendance_correction")
+}
+
+// ───────────── E. Komunikasi (D8: dalam aplikasi dulu) ─────────────
+
+enum AudienceKind {
+  ALL
+  STAFF
+  STUDENTS
+  GUARDIANS
+  CLASS_GROUP
+  /// Warga rombel yang ruang utamanya di gedung tertentu.
+  BUILDING
+  /// Pemegang satu peran tertentu (audienceRole).
+  ROLE
+}
+
+enum AnnouncementStatus {
+  SCHEDULED
+  PUBLISHED
+  WITHDRAWN
+}
+
+/// Pengumuman. Audiens diperiksa saat dibaca, bukan hanya saat dikirim.
+model Announcement {
+  id           String             @id @default(uuid()) @db.Uuid
+  schoolId     String             @db.Uuid
+  title        String
+  body         String
+  audienceKind AudienceKind
+  classGroupId String?            @db.Uuid
+  classGroup   ClassGroup?        @relation(fields: [classGroupId], references: [id])
+  buildingId   String?            @db.Uuid
+  building     Building?          @relation(fields: [buildingId], references: [id])
+  audienceRole RoleKey?
+  status       AnnouncementStatus
+  publishAt    DateTime
+  publishedAt  DateTime?
+  withdrawnAt  DateTime?
+  createdById  String             @db.Uuid
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([schoolId, publishAt])
+  @@map("announcement")
+}
+
+/// Kejadian sumber notifikasi. source_event_id unik: proses yang diulang tidak menggandakan notifikasi.
+model NotificationEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  schoolId      String   @db.Uuid
+  sourceEventId String   @unique
+  eventType     String
+  payload       Json     @default("{}")
+  createdAt     DateTime @default(now())
+
+  notifications Notification[]
+
+  @@map("notification_event")
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  PUSH
+}
+
+enum NotificationStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+model Notification {
+  id          String              @id @default(uuid()) @db.Uuid
+  eventId     String              @db.Uuid
+  event       NotificationEvent   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  recipientId String              @db.Uuid
+  recipient   User                @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  channel     NotificationChannel @default(IN_APP)
+  status      NotificationStatus  @default(PENDING)
+  title       String
+  body        String
+  link        String?
+  /// Waktu dibaca. Terkirim ≠ dibaca.
+  readAt      DateTime?
+  createdAt   DateTime            @default(now())
+
+  attempts DeliveryAttempt[]
+
+  @@unique([eventId, recipientId, channel])
+  @@index([recipientId, readAt, createdAt])
+  @@map("notification")
+}
+
+enum DeliveryResult {
+  SENT
+  FAILED
+  SKIPPED
+}
+
+/// Percobaan pengiriman per kanal; terpisah dari data sumber.
+model DeliveryAttempt {
+  id             String         @id @default(uuid()) @db.Uuid
+  notificationId String         @db.Uuid
+  notification   Notification   @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  providerRef    String?
+  result         DeliveryResult
+  detail         String?
+  attemptedAt    DateTime       @default(now())
+
+  @@map("delivery_attempt")
+}
+
+/// Tanda baca pengumuman per pengguna (baca ≠ persetujuan).
+model ReadReceipt {
+  id       String   @id @default(uuid()) @db.Uuid
+  userId   String   @db.Uuid
+  itemKind String
+  itemId   String   @db.Uuid
+  readAt   DateTime @default(now())
+
+  @@unique([userId, itemKind, itemId])
+  @@map("read_receipt")
 }

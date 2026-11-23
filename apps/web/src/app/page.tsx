@@ -13,7 +13,7 @@ export default function Home() {
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-10 px-4 py-12 sm:px-6">
       <header className="flex flex-col gap-3">
         <p className="text-sm font-medium text-muted-foreground">Platform manajemen sekolah terpadu</p>
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Smart School</h1>
+        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Elvara School Ecosystem</h1>
         <p className="max-w-2xl text-muted-foreground">Satu data untuk seluruh sekolah. Setiap orang melihat bagiannya sendiri.</p>
         <div className="flex flex-wrap items-center gap-3">
           <LinkButton href="/login">Masuk</LinkButton>
