@@ -30,8 +30,12 @@ export const ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = {
     'announcements:publish',
     'work-shifts:read',
     'work-shifts:manage',
+    'calendar:manage',
+    'grading:manage',
+    'grading:read',
+    'report-cards:approve',
   ],
-  MANAGEMENT: ['school:read', 'academic-years:read', 'people:read', 'audit:read', 'classes:read', 'timetable:read', 'attendance:read', 'announcements:publish', 'work-shifts:read'],
+  MANAGEMENT: ['school:read', 'academic-years:read', 'people:read', 'audit:read', 'classes:read', 'timetable:read', 'attendance:read', 'announcements:publish', 'work-shifts:read', 'grading:read', 'report-cards:approve'],
   CURRICULUM: [
     'school:read',
     'academic-years:read',
@@ -43,6 +47,9 @@ export const ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = {
     'timetable:read',
     'attendance:read',
     'announcements:publish',
+    'calendar:manage',
+    'grading:manage',
+    'grading:read',
   ],
   /** Guru: mengisi absensi kelas yang diajar. Wali kelas mendapat scope tambahan dari data (rombel yang diampu). */
   TEACHER: ['school:read', 'academic-years:read', 'timetable:read', 'attendance:take'],

@@ -14,3 +14,4 @@ export * from './people.js';
 export * from './school.js';
 export * from './search.js';
 export * from './staff.js';
+export * from './calendar.js';

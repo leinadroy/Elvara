@@ -208,6 +208,22 @@ async function main() {
 
   const admin = await prisma.user.findUniqueOrThrow({ where: { email: 'admin@smartschool.test' } });
 
+  // Agenda akademik contoh (R2 E10): terbit, kecuali satu draf.
+  if (!(await prisma.academicCalendarEvent.findFirst({ where: { schoolId: school.id } }))) {
+    const base = todayIn(school.timezone);
+    const events: [string, 'EXAM' | 'HOLIDAY' | 'REPORT_DAY' | 'ACTIVITY', number, number, 'DRAFT' | 'PUBLISHED'][] = [
+      ['Sumatif akhir semester ganjil', 'EXAM', 14, 19, 'PUBLISHED'],
+      ['Libur akhir semester', 'HOLIDAY', 28, 40, 'PUBLISHED'],
+      ['Pembagian rapor semester ganjil', 'REPORT_DAY', 26, 26, 'PUBLISHED'],
+      ['Pentas seni kelas 7', 'ACTIVITY', 7, 7, 'DRAFT'],
+    ];
+    for (const [title, category, from, to, status] of events) {
+      await prisma.academicCalendarEvent.create({
+        data: { schoolId: school.id, title, category, startsOn: d(addDays(base, from)), endsOn: d(addDays(base, to)), status, publishedAt: status === 'PUBLISHED' ? new Date() : null, createdById: admin.id },
+      });
+    }
+  }
+
   // Staf non-guru dengan jadwal tugas 7 hari mulai hari ini (ADR 0004).
   await employee('P-005', 'Staf Tata Usaha', 'Staf Tata Usaha', false, 'staf@smartschool.test', ['STAFF']);
   const stafId = await emp('P-005');

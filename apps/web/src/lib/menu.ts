@@ -33,6 +33,8 @@ const MENU: MenuDef[] = [
   { href: "/teacher/attendance", label: "Absensi hari ini", group: "Kelas & absensi", icon: "attendance", permission: "attendance:take", keywords: "absen presensi kelas jadwal mengajar" },
   { href: "/teacher/attendance/corrections", label: "Koreksi absensi", group: "Kelas & absensi", icon: "inbox", anyPermission: ["attendance:take", "attendance:manage"], keywords: "koreksi wali kelas" },
   { href: "/academics/attendance-recap", label: "Rekap absensi", group: "Kelas & absensi", icon: "chart", anyPermission: ["attendance:read", "attendance:take"], keywords: "rekap persentase kehadiran" },
+  { href: "/academics/calendar", label: "Kalender akademik", group: "Akademik", icon: "calendar", permission: "classes:read", keywords: "agenda ujian libur rapor semester" },
+  { href: "/academics/calendar", label: "Kalender akademik", group: "Utama", icon: "calendar", roles: ["TEACHER", "STAFF", "STUDENT", "GUARDIAN"], keywords: "agenda ujian libur rapor semester" },
   { href: "/academics/classes", label: "Rombel", group: "Akademik", icon: "classes", permission: "classes:read", keywords: "kelas rombongan belajar wali kelas penempatan" },
   { href: "/academics/timetable", label: "Jadwal pelajaran", group: "Akademik", icon: "timetable", permission: "classes:read", keywords: "jadwal benturan terbit" },
   { href: "/academics/setup", label: "Pengaturan akademik", group: "Akademik", icon: "settings", permission: "classes:read", keywords: "tingkat program jurusan mapel mata pelajaran jam pelajaran penugasan guru" },

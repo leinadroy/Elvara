@@ -2,10 +2,10 @@ import request from 'supertest';
 import type { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types.js';
 import { AttendanceService } from '../src/attendance/attendance.service.js';
-import { hashPassword } from '../src/auth/crypto.js';
-import { addDays, todayIn } from '../src/common/school-time.js';
+import { addDays } from '../src/common/school-time.js';
 import type { PrismaClient, RoleKey } from '../src/generated/prisma/client.js';
-import { createApp, createPrisma, loginAs, PASSWORD, resetDb, seedFixture, type Fixture } from './helpers.js';
+import { createApp, createPrisma, loginAs, resetDb, seedFixture, type Fixture } from './helpers.js';
+import { api, createUser, seedSchool, setupClass as setupClassShared, today, type School } from './school-fixture.js';
 
 // Alur R1 memanggil banyak endpoint; PGlite (satu koneksi) lambat bila seluruh suite berjalan.
 vi.setConfig({ testTimeout: 120_000 });
@@ -13,34 +13,11 @@ vi.setConfig({ testTimeout: 120_000 });
 let app: INestApplication<App>;
 let prisma: PrismaClient;
 let fx: Fixture;
-const api = (path: string) => `/api/v1${path}`;
-const today = () => todayIn('Asia/Jakarta');
-const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
-interface R1 {
-  termId: string;
-  yearId: string;
-  gradeId: string;
-  mathId: string;
-  homeroomEmail: string;
-  homeroomEmployeeId: string;
-  teacherEmployeeId: string;
-  studentEmail: string;
-  guardianEmail: string;
-  otherStudentEmail: string;
-}
+type R1 = School;
 let r1: R1;
 
-async function user(fullName: string, email: string, role: RoleKey, kind: 'employee' | 'student' | 'guardian') {
-  const passwordHash = await hashPassword(PASSWORD);
-  const person = await prisma.person.create({ data: { schoolId: fx.schoolId, fullName, email } });
-  let id = '';
-  if (kind === 'employee') id = (await prisma.employee.create({ data: { schoolId: fx.schoolId, personId: person.id, employeeNumber: email, position: 'Guru', isTeacher: true } })).id;
-  if (kind === 'student') id = (await prisma.student.create({ data: { schoolId: fx.schoolId, personId: person.id, nis: email.slice(0, 8) } })).id;
-  if (kind === 'guardian') id = (await prisma.guardian.create({ data: { schoolId: fx.schoolId, personId: person.id } })).id;
-  await prisma.user.create({ data: { email, passwordHash, personId: person.id, roles: { create: { role, schoolId: fx.schoolId } } } });
-  return id;
-}
+const user = (fullName: string, email: string, role: RoleKey, kind: 'employee' | 'student' | 'guardian') => createUser(prisma, fx, fullName, email, role, kind);
 
 beforeAll(async () => {
   prisma = createPrisma();
@@ -49,55 +26,15 @@ beforeAll(async () => {
 beforeEach(async () => {
   await resetDb(prisma);
   fx = await seedFixture(prisma);
-  // Guru fixture menjadi guru mapel; tambah wali kelas, siswa berakun, wali murid.
-  const teacherPerson = (await prisma.user.findUniqueOrThrow({ where: { email: fx.emails.teacher } })).personId!;
-  await prisma.employee.updateMany({ where: { personId: teacherPerson }, data: { isTeacher: true } });
-  const t = today();
-  const year = await prisma.academicYear.create({
-    data: { schoolId: fx.schoolId, name: 'TA Tes', startDate: d(addDays(t, -150)), endDate: d(addDays(t, 150)), status: 'ACTIVE', terms: { create: { name: 'Semester Tes', sequence: 1, startDate: d(addDays(t, -150)), endDate: d(addDays(t, 150)) } } },
-    include: { terms: true },
-  });
-  const homeroomEmployeeId = await user('Wali Kelas', 'walikelas@tes.test', 'TEACHER', 'employee');
-  const studentId = await user('Siswa Berakun', 'siswa@tes.test', 'STUDENT', 'student');
-  const otherStudentId = await user('Siswa Lain', 'siswa2@tes.test', 'STUDENT', 'student');
-  const guardianId = await user('Wali Murid', 'walimurid@tes.test', 'GUARDIAN', 'guardian');
-  await prisma.studentGuardian.create({ data: { studentId, guardianId, relationship: 'MOTHER', status: 'VERIFIED', verifiedAt: new Date() } });
-  fx.studentIds.push(studentId, otherStudentId);
-  r1 = {
-    termId: year.terms[0]!.id,
-    yearId: year.id,
-    gradeId: '',
-    mathId: '',
-    homeroomEmail: 'walikelas@tes.test',
-    homeroomEmployeeId,
-    teacherEmployeeId: (await prisma.employee.findFirstOrThrow({ where: { personId: teacherPerson } })).id,
-    studentEmail: 'siswa@tes.test',
-    guardianEmail: 'walimurid@tes.test',
-    otherStudentEmail: 'siswa2@tes.test',
-  };
+  r1 = await seedSchool(prisma, fx);
 });
 afterAll(async () => {
   await app.close();
   await prisma.$disconnect();
 });
 
-/** Menyusun rombel + jadwal terbit lewat API, slot setiap hari pukul 07:00–08:20. Mengembalikan id penting. */
-async function setupClass(code = '7A', studentIdx = [0, 2]) {
-  const cur = await loginAs(app, fx.emails.curriculum);
-  const admin = await loginAs(app, fx.emails.admin);
-  if (!r1.gradeId) r1.gradeId = (await admin.post(api('/grade-levels')).send({ code: '7', ordinal: 1, name: 'Kelas 7' }).expect(201)).body.id;
-  if (!r1.mathId) r1.mathId = (await cur.post(api('/subjects')).send({ code: 'MTK', name: 'Matematika' }).expect(201)).body.id;
-  const cls = (await admin.post(api('/class-groups')).send({ academicYearId: r1.yearId, gradeLevelId: r1.gradeId, code, capacity: 30 }).expect(201)).body.id as string;
-  await admin.post(api(`/class-groups/${cls}/homeroom`)).send({ employeeId: r1.homeroomEmployeeId, validFrom: addDays(today(), -100) }).expect(204);
-  const enrolled = await admin.post(api(`/class-groups/${cls}/enrollments`)).send({ studentIds: studentIdx.map((i) => fx.studentIds[i]), validFrom: addDays(today(), -100) }).expect(200);
-  expect(enrolled.body).toMatchObject({ enrolled: studentIdx.length, rejected: [] });
-  const ta = (await cur.post(api('/teaching-assignments')).send({ termId: r1.termId, classGroupId: cls, subjectId: r1.mathId, employeeId: r1.teacherEmployeeId, weeklyPeriods: 14 }).expect(201)).body.id as string;
-  const draft = (await cur.post(api('/timetable/drafts')).send({ termId: r1.termId, classGroupId: cls }).expect(201)).body.id as string;
-  for (let weekday = 1; weekday <= 7; weekday++) {
-    await cur.post(api(`/timetable/versions/${draft}/slots`)).send({ teachingAssignmentId: ta, weekday, startTime: '07:00', endTime: '08:20' }).expect(201);
-  }
-  return { cls, ta, draft, cur, admin };
-}
+/** Menyusun rombel + draf jadwal lewat API (lihat school-fixture.ts). */
+const setupClass = (code = '7A', studentIdx = [0, 2]) => setupClassShared(app, fx, r1, code, studentIdx);
 
 describe('R1 struktur kelas & jadwal', () => {
   it('menerbitkan jadwal, menolak benturan guru, dan menyimpan riwayat versi', async () => {

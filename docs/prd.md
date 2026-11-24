@@ -101,7 +101,7 @@ Target angka ditetapkan bersama sekolah sebelum pilot. Metrik dihitung dari data
 
 Kanal bantuan dan SOP keselamatan **tetap disiapkan sekolah sejak awal**. R4 hanya menentukan kapan versi digital penuhnya diluncurkan, setelah alur respons nyata teruji. Kanal pelaporan keselamatan boleh dimajukan bila SOP petugas penerima dan eskalasi sudah siap.
 
-Bagian 7 merinci R0 dan R1. Rilis berikutnya dirinci di PRD lanjutan dengan dasar dokumen modul masing-masing.
+Bagian 7 merinci R0 dan R1. Rilis berikutnya dirinci di PRD lanjutan dengan dasar dokumen modul masing-masing: [R2 Akademik](prd-r2.md).
 
 ## 7. Kebutuhan fungsional (R0 + R1)
 

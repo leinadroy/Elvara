@@ -271,6 +271,9 @@ model Term {
   teachingAssignments TeachingAssignment[]
   timetableVersions   TimetableVersion[]
 
+  gradeSchemes GradeSchemeVersion[]
+  reportCards  ReportCard[]
+
   @@unique([academicYearId, sequence])
   @@map("term")
 }
@@ -396,6 +399,10 @@ model Student {
 
   enrollments       Enrollment[]
   attendanceRecords StudentAttendanceRecord[]
+
+  submissions  Submission[]
+  gradeEntries GradeEntry[]
+  reportCards  ReportCard[]
 
   @@unique([schoolId, nis])
   @@unique([schoolId, nisn])
@@ -565,6 +572,10 @@ model GradeLevel {
 
   classGroups ClassGroup[]
 
+  gradeSchemes     GradeSchemeVersion[]
+  learningOutcomes LearningOutcome[]
+  calendarEvents   AcademicCalendarEvent[]
+
   @@unique([schoolId, code])
   @@unique([schoolId, ordinal])
   @@map("grade_level")
@@ -616,6 +627,8 @@ model ClassGroup {
   timetableVersions   TimetableVersion[]
   attendanceSessions  StudentAttendanceSession[]
   announcements       Announcement[]
+
+  reportCards ReportCard[]
 
   @@unique([academicYearId, code])
   @@map("class_group")
@@ -683,6 +696,10 @@ model Subject {
 
   teachingAssignments TeachingAssignment[]
 
+  gradeSchemes       GradeSchemeVersion[]
+  learningOutcomes   LearningOutcome[]
+  reportCardSubjects ReportCardSubject[]
+
   @@unique([schoolId, code])
   @@map("subject")
 }
@@ -712,6 +729,9 @@ model TeachingAssignment {
 
   timetableSlots     TimetableSlot[]
   attendanceSessions StudentAttendanceSession[]
+
+  activities  LearningActivity[]
+  assessments Assessment[]
 
   @@unique([termId, classGroupId, subjectId, employeeId])
   @@index([employeeId, termId])
@@ -1065,4 +1085,370 @@ model ReadReceipt {
 
   @@unique([userId, itemKind, itemId])
   @@map("read_receipt")
+}
+
+// ═════════════════════════ R2 Akademik ═════════════════════════
+// Mengikuti architecture_blueprint/05_database_core_tables.md bagian C dan docs/prd-r2.md.
+// Keputusan: ADR 0005 (Kurikulum Merdeka, skema nilai per mapel oleh kurikulum, nilai terlihat per penilaian,
+// rapor wali kelas → kepala sekolah).
+
+// ───────────── Kalender akademik (E10) ─────────────
+
+enum CalendarCategory {
+  SEMESTER
+  EXAM
+  HOLIDAY
+  REPORT_DAY
+  DEADLINE
+  ACTIVITY
+}
+
+enum CalendarAudience {
+  ALL
+  STAFF
+  STUDENTS_GUARDIANS
+  GRADE_LEVEL
+}
+
+enum CalendarStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
+/// Agenda akademik. Hanya yang terbit tampil di portal; audiens diperiksa saat dibaca.
+model AcademicCalendarEvent {
+  id           String           @id @default(uuid()) @db.Uuid
+  schoolId     String           @db.Uuid
+  title        String
+  category     CalendarCategory
+  startsOn     DateTime         @db.Date
+  /// Inklusif.
+  endsOn       DateTime         @db.Date
+  audience     CalendarAudience @default(ALL)
+  gradeLevelId String?          @db.Uuid
+  gradeLevel   GradeLevel?      @relation(fields: [gradeLevelId], references: [id])
+  location     String?
+  description  String?
+  status       CalendarStatus   @default(DRAFT)
+  publishedAt  DateTime?
+  createdById  String           @db.Uuid
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([schoolId, startsOn])
+  @@map("academic_calendar_event")
+}
+
+// ───────────── Skema nilai dan capaian (E11) ─────────────
+
+enum SchemeStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+}
+
+/// Skema nilai per mapel × tingkat × semester, ditetapkan kurikulum. Terbit tidak diubah; perubahan = versi baru.
+model GradeSchemeVersion {
+  id            String       @id @default(uuid()) @db.Uuid
+  schoolId      String       @db.Uuid
+  termId        String       @db.Uuid
+  term          Term         @relation(fields: [termId], references: [id])
+  subjectId     String       @db.Uuid
+  subject       Subject      @relation(fields: [subjectId], references: [id])
+  gradeLevelId  String       @db.Uuid
+  gradeLevel    GradeLevel   @relation(fields: [gradeLevelId], references: [id])
+  versionNo     Int
+  status        SchemeStatus @default(DRAFT)
+  /// Aturan pembulatan nilai akhir; default dibulatkan sekali ke bilangan bulat, setengah ke atas.
+  roundingRule  String       @default("HALF_UP_INTEGER")
+  /// KKTP opsional (0–100).
+  passingScore  Float?
+  publishedAt   DateTime?
+  publishedById String?      @db.Uuid
+  createdById   String       @db.Uuid
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  components GradeComponent[]
+
+  @@unique([termId, subjectId, gradeLevelId, versionNo])
+  @@map("grade_scheme_version")
+}
+
+model GradeComponent {
+  id              String             @id @default(uuid()) @db.Uuid
+  schemeVersionId String             @db.Uuid
+  schemeVersion   GradeSchemeVersion @relation(fields: [schemeVersionId], references: [id], onDelete: Cascade)
+  code            String
+  name            String
+  /// Persen; jumlah per skema = 100 sebelum terbit.
+  weight          Float
+  sortOrder       Int                @default(0)
+
+  assessments Assessment[]
+
+  @@unique([schemeVersionId, code])
+  @@map("grade_component")
+}
+
+/// Capaian pembelajaran per mapel × tingkat, dipakai untuk deskripsi rapor.
+model LearningOutcome {
+  id           String       @id @default(uuid()) @db.Uuid
+  schoolId     String       @db.Uuid
+  subjectId    String       @db.Uuid
+  subject      Subject      @relation(fields: [subjectId], references: [id])
+  gradeLevelId String       @db.Uuid
+  gradeLevel   GradeLevel   @relation(fields: [gradeLevelId], references: [id])
+  code         String
+  description  String
+  status       RecordStatus @default(ACTIVE)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([subjectId, gradeLevelId, code])
+  @@map("learning_outcome")
+}
+
+// ───────────── Tugas dan pengumpulan (E12) ─────────────
+
+enum ActivityKind {
+  ASSIGNMENT
+  QUIZ
+  EXAM
+  PRACTICE
+}
+
+enum ActivityStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+  CANCELLED
+}
+
+/// Kegiatan belajar pada penugasan mengajar. Siswa hanya melihat yang terbit untuk rombelnya.
+model LearningActivity {
+  id                   String             @id @default(uuid()) @db.Uuid
+  schoolId             String             @db.Uuid
+  teachingAssignmentId String             @db.Uuid
+  teachingAssignment   TeachingAssignment @relation(fields: [teachingAssignmentId], references: [id])
+  kind                 ActivityKind       @default(ASSIGNMENT)
+  title                String
+  instructions         String             @default("")
+  opensAt              DateTime
+  dueAt                DateTime
+  allowLate            Boolean            @default(false)
+  allowResubmit        Boolean            @default(true)
+  /// false = tanpa pengumpulan lewat aplikasi (mis. ujian tertulis di kelas).
+  acceptsSubmissions   Boolean            @default(true)
+  status               ActivityStatus     @default(DRAFT)
+  publishedAt          DateTime?
+  createdById          String             @db.Uuid
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  submissions Submission[]
+  assessment  Assessment?
+
+  @@index([teachingAssignmentId, dueAt])
+  @@map("learning_activity")
+}
+
+enum SubmissionStatus {
+  ON_TIME
+  LATE
+}
+
+/// Kiriman siswa (satu per kegiatan per siswa); isinya berversi di submission_version.
+model Submission {
+  id              String           @id @default(uuid()) @db.Uuid
+  activityId      String           @db.Uuid
+  activity        LearningActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  studentId       String           @db.Uuid
+  student         Student          @relation(fields: [studentId], references: [id])
+  latestVersionNo Int              @default(1)
+  status          SubmissionStatus
+  submittedAt     DateTime
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  versions SubmissionVersion[]
+
+  @@unique([activityId, studentId])
+  @@map("submission")
+}
+
+model SubmissionVersion {
+  id             String     @id @default(uuid()) @db.Uuid
+  submissionId   String     @db.Uuid
+  submission     Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  versionNo      Int
+  text           String?
+  /// Berkas di penyimpanan privat (sama dengan dokumen R0).
+  storageKey     String?
+  originalName   String?
+  mimeType       String?
+  sizeBytes      Int?
+  sha256         String?
+  late           Boolean
+  /// Kunci idempoten dari klien: kirim ulang dengan kunci sama tidak membuat versi baru.
+  idempotencyKey String?
+  submittedAt    DateTime   @default(now())
+
+  @@unique([submissionId, versionNo])
+  @@unique([submissionId, idempotencyKey])
+  @@map("submission_version")
+}
+
+// ───────────── Penilaian dan nilai (E13) ─────────────
+
+enum AssessmentStatus {
+  DRAFT
+  PUBLISHED
+}
+
+/// Sumber nilai; selalu terkait satu komponen skema (versi skema saat dibuat).
+model Assessment {
+  id                   String             @id @default(uuid()) @db.Uuid
+  schoolId             String             @db.Uuid
+  teachingAssignmentId String             @db.Uuid
+  teachingAssignment   TeachingAssignment @relation(fields: [teachingAssignmentId], references: [id])
+  componentId          String             @db.Uuid
+  component            GradeComponent     @relation(fields: [componentId], references: [id])
+  activityId           String?            @unique @db.Uuid
+  activity             LearningActivity?  @relation(fields: [activityId], references: [id])
+  title                String
+  assessedOn           DateTime?          @db.Date
+  status               AssessmentStatus   @default(DRAFT)
+  publishedAt          DateTime?
+  publishedById        String?            @db.Uuid
+  createdById          String             @db.Uuid
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  entries GradeEntry[]
+
+  @@index([teachingAssignmentId])
+  @@map("assessment")
+}
+
+enum GradeState {
+  /// Belum dinilai (berbeda dari nol).
+  PENDING
+  SCORED
+  /// Tidak mengumpulkan: dihitung 0.
+  MISSING
+  /// Tidak berlaku: dikecualikan dari rata-rata.
+  EXCUSED
+}
+
+model GradeEntry {
+  id           String     @id @default(uuid()) @db.Uuid
+  assessmentId String     @db.Uuid
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  studentId    String     @db.Uuid
+  student      Student    @relation(fields: [studentId], references: [id])
+  state        GradeState @default(PENDING)
+  score        Float?
+  feedback     String?
+  /// Pemeriksaan versi: simpan dengan versi lama → 409.
+  versionNo    Int        @default(1)
+  updatedById  String?    @db.Uuid
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  changes GradeChange[]
+
+  @@unique([assessmentId, studentId])
+  @@index([studentId])
+  @@map("grade_entry")
+}
+
+/// Perubahan nilai setelah terbit: lama, baru, alasan, pelaku.
+model GradeChange {
+  id           String     @id @default(uuid()) @db.Uuid
+  gradeEntryId String     @db.Uuid
+  gradeEntry   GradeEntry @relation(fields: [gradeEntryId], references: [id], onDelete: Cascade)
+  oldState     GradeState
+  oldScore     Float?
+  newState     GradeState
+  newScore     Float?
+  reason       String
+  actorId      String     @db.Uuid
+  createdAt    DateTime   @default(now())
+
+  @@index([gradeEntryId])
+  @@map("grade_change")
+}
+
+// ───────────── Rapor (E15) ─────────────
+
+enum ReportCardStatus {
+  DRAFT
+  SUBMITTED
+  RETURNED
+  PUBLISHED
+}
+
+/// Rapor per siswa per semester. Nilai dihitung langsung sampai terbit; terbit = snapshot tidak berubah.
+model ReportCard {
+  id               String           @id @default(uuid()) @db.Uuid
+  schoolId         String           @db.Uuid
+  studentId        String           @db.Uuid
+  student          Student          @relation(fields: [studentId], references: [id])
+  termId           String           @db.Uuid
+  term             Term             @relation(fields: [termId], references: [id])
+  classGroupId     String           @db.Uuid
+  classGroup       ClassGroup       @relation(fields: [classGroupId], references: [id])
+  status           ReportCardStatus @default(DRAFT)
+  homeroomNote     String?
+  submittedAt      DateTime?
+  submittedById    String?          @db.Uuid
+  decidedAt        DateTime?
+  decidedById      String?          @db.Uuid
+  returnNote       String?
+  currentVersionNo Int              @default(0)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  subjects ReportCardSubject[]
+  versions ReportCardVersion[]
+
+  @@unique([studentId, termId])
+  @@index([classGroupId, termId])
+  @@map("report_card")
+}
+
+/// Deskripsi capaian per mapel per siswa, ditulis guru mapel.
+model ReportCardSubject {
+  id                 String     @id @default(uuid()) @db.Uuid
+  reportCardId       String     @db.Uuid
+  reportCard         ReportCard @relation(fields: [reportCardId], references: [id], onDelete: Cascade)
+  subjectId          String     @db.Uuid
+  subject            Subject    @relation(fields: [subjectId], references: [id])
+  highestAchievement String?
+  needsImprovement   String?
+  updatedById        String?    @db.Uuid
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  @@unique([reportCardId, subjectId])
+  @@map("report_card_subject")
+}
+
+/// Versi rapor terbit: snapshot data + PDF. Tidak pernah diubah; revisi = versi baru.
+model ReportCardVersion {
+  id             String     @id @default(uuid()) @db.Uuid
+  reportCardId   String     @db.Uuid
+  reportCard     ReportCard @relation(fields: [reportCardId], references: [id], onDelete: Cascade)
+  versionNo      Int
+  snapshot       Json
+  storageKey     String
+  sha256         String
+  revisionReason String?
+  publishedAt    DateTime   @default(now())
+  publishedById  String     @db.Uuid
+
+  @@unique([reportCardId, versionNo])
+  @@map("report_card_version")
 }
