@@ -125,6 +125,23 @@ export class MetricsService {
             source: 'teaching_assignment, timetable_slot',
           },
         );
+        // R2: mapel × tingkat yang diajarkan semester ini tetapi belum punya skema nilai terbit (FR-16.3).
+        const [taught, published] = await Promise.all([
+          this.prisma.teachingAssignment.findMany({ where: { schoolId: s, termId: term.id }, select: { subjectId: true, classGroup: { select: { gradeLevelId: true } } } }),
+          this.prisma.gradeSchemeVersion.findMany({ where: { schoolId: s, termId: term.id, status: 'PUBLISHED' }, select: { subjectId: true, gradeLevelId: true } }),
+        ]);
+        const done = new Set(published.map((p) => `${p.subjectId}:${p.gradeLevelId}`));
+        const pairs = new Set(taught.map((t) => `${t.subjectId}:${t.classGroup.gradeLevelId}`));
+        out.push({
+          key: 'grade_schemes_missing',
+          label: 'Skema nilai belum terbit',
+          value: [...pairs].filter((k) => !done.has(k)).length,
+          note: `dari ${pairs.size} mapel × tingkat`,
+          warn: true,
+          href: '/academics/grading',
+          definition: `Kombinasi mapel × tingkat yang diajarkan pada ${term.name} tetapi belum punya skema nilai terbit; guru belum bisa membuat penilaian untuknya.`,
+          source: 'teaching_assignment, grade_scheme_version',
+        });
       } else {
         out.push({ key: 'no_term', label: 'Semester berjalan', value: null, note: 'Hari ini di luar masa semester', definition: 'Tidak ada semester di tahun ajaran aktif yang memuat tanggal hari ini.', source: 'term' });
       }

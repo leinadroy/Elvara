@@ -208,6 +208,44 @@ async function main() {
 
   const admin = await prisma.user.findUniqueOrThrow({ where: { email: 'admin@smartschool.test' } });
 
+  // Skema nilai terbit untuk mapel kelas 7 semester ganjil + capaian pembelajaran contoh (R2 E11).
+  for (const code of ['MTK', 'BIN', 'IPA']) {
+    const where = { termId: term.id, subjectId: subjects[code]!, gradeLevelId: grades['7']! };
+    if (await prisma.gradeSchemeVersion.findFirst({ where })) continue;
+    await prisma.gradeSchemeVersion.create({
+      data: {
+        ...where,
+        schoolId: school.id,
+        versionNo: 1,
+        status: 'PUBLISHED',
+        passingScore: 75,
+        publishedAt: new Date(),
+        publishedById: admin.id,
+        createdById: admin.id,
+        components: {
+          create: [
+            { code: 'FORMATIF', name: 'Formatif (tugas & kuis)', weight: 30, sortOrder: 0 },
+            { code: 'STS', name: 'Sumatif tengah semester', weight: 30, sortOrder: 1 },
+            { code: 'SAS', name: 'Sumatif akhir semester', weight: 40, sortOrder: 2 },
+          ],
+        },
+      },
+    });
+  }
+  const outcomes: [string, string, string][] = [
+    ['MTK', 'CP-1', 'Menyelesaikan persamaan dan pertidaksamaan linear satu variabel.'],
+    ['MTK', 'CP-2', 'Menyajikan dan menafsirkan data dalam tabel dan diagram.'],
+    ['BIN', 'CP-1', 'Menulis teks deskripsi dengan struktur dan kebahasaan yang tepat.'],
+    ['IPA', 'CP-1', 'Menjelaskan klasifikasi makhluk hidup berdasarkan ciri-cirinya.'],
+  ];
+  for (const [subject, code, description] of outcomes) {
+    await prisma.learningOutcome.upsert({
+      where: { subjectId_gradeLevelId_code: { subjectId: subjects[subject]!, gradeLevelId: grades['7']!, code } },
+      create: { schoolId: school.id, subjectId: subjects[subject]!, gradeLevelId: grades['7']!, code, description },
+      update: {},
+    });
+  }
+
   // Agenda akademik contoh (R2 E10): terbit, kecuali satu draf.
   if (!(await prisma.academicCalendarEvent.findFirst({ where: { schoolId: school.id } }))) {
     const base = todayIn(school.timezone);

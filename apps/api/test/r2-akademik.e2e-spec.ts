@@ -73,3 +73,61 @@ describe('R2 kalender akademik (E10)', () => {
     expect(audit.body.items.map((x: { action: string }) => x.action)).toEqual(expect.arrayContaining(['calendar.create', 'calendar.publish', 'calendar.update']));
   });
 });
+
+describe('R2 skema nilai & capaian (E11)', () => {
+  it('draf → terbit hanya bila bobot 100%, terbit tidak diubah, versi baru menggantikan', async () => {
+    const a = await setupClass(app, fx, s, '7A', [2]);
+    const cur = a.cur;
+    const before = (await cur.get(api('/dashboard/summary')).expect(200)).body.metrics.find((m: { key: string }) => m.key === 'grade_schemes_missing');
+    expect(before).toMatchObject({ value: 1, note: 'dari 1 mapel × tingkat' });
+
+    const list0 = await cur.get(api(`/grade-schemes?termId=${s.termId}`)).expect(200);
+    expect(list0.body).toEqual([expect.objectContaining({ subject: expect.objectContaining({ code: 'MTK' }), taught: true, published: null, draft: null })]);
+
+    const base = { termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId };
+    const v1 = await cur
+      .post(api('/grade-schemes'))
+      .send({ ...base, components: [{ code: 'formatif', name: 'Formatif', weight: 30 }, { code: 'STS', name: 'Sumatif tengah', weight: 30 }] })
+      .expect(201);
+    expect(v1.body.versionNo).toBe(1);
+    await cur.post(api('/grade-schemes')).send({ ...base, components: [{ code: 'X', name: 'Lain', weight: 100 }] }).expect(409);
+    await cur.post(api('/grade-schemes')).send({ ...base, components: [{ code: 'A', name: 'Aa', weight: 50 }, { code: 'A', name: 'Ab', weight: 50 }] }).expect(422);
+    // Bobot 60% → terbit ditolak.
+    await cur.post(api(`/grade-schemes/${v1.body.id}/publish`)).expect(409);
+    await cur
+      .put(api(`/grade-schemes/${v1.body.id}`))
+      .send({ passingScore: 75, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 30 }, { code: 'STS', name: 'Sumatif tengah', weight: 30 }, { code: 'SAS', name: 'Sumatif akhir', weight: 40 }] })
+      .expect(204);
+    await cur.post(api(`/grade-schemes/${v1.body.id}/publish`)).expect(204);
+    await cur.put(api(`/grade-schemes/${v1.body.id}`)).send({ components: [{ code: 'X', name: 'Lain', weight: 100 }] }).expect(409);
+
+    const list1 = await cur.get(api(`/grade-schemes?termId=${s.termId}`)).expect(200);
+    expect(list1.body[0].published).toMatchObject({ versionNo: 1, passingScore: 75, weightTotal: 100 });
+    expect(list1.body[0].published.components.map((c: { code: string }) => c.code)).toEqual(['FORMATIF', 'STS', 'SAS']);
+    expect((await cur.get(api('/dashboard/summary')).expect(200)).body.metrics.find((m: { key: string }) => m.key === 'grade_schemes_missing').value).toBe(0);
+
+    // Versi baru menyalin komponen; terbit menggantikan v1 (SUPERSEDED, tidak dihapus).
+    const v2 = await cur.post(api(`/grade-schemes/${v1.body.id}/revise`)).expect(201);
+    expect(v2.body.versionNo).toBe(2);
+    await cur.put(api(`/grade-schemes/${v2.body.id}`)).send({ passingScore: 70, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 40 }, { code: 'SAS', name: 'Sumatif akhir', weight: 60 }] }).expect(204);
+    await cur.post(api(`/grade-schemes/${v2.body.id}/publish`)).expect(204);
+    const versions = await prisma.gradeSchemeVersion.findMany({ where: base, orderBy: { versionNo: 'asc' } });
+    expect(versions.map((v) => v.status)).toEqual(['SUPERSEDED', 'PUBLISHED']);
+    expect(await prisma.gradeComponent.count({ where: { schemeVersionId: v1.body.id } })).toBe(3);
+
+    const teacher = await loginAs(app, fx.emails.teacher);
+    await teacher.get(api(`/grade-schemes?termId=${s.termId}`)).expect(403);
+    await teacher.post(api('/grade-schemes')).send({ ...base, components: [{ code: 'X', name: 'Lain', weight: 100 }] }).expect(403);
+  });
+
+  it('capaian pembelajaran unik per mapel × tingkat', async () => {
+    await setupClass(app, fx, s, '7A', [2]);
+    const cur = await loginAs(app, fx.emails.curriculum);
+    const body = { subjectId: s.mathId, gradeLevelId: s.gradeId, code: 'CP-1', description: 'Menyelesaikan persamaan linear satu variabel.' };
+    const o = await cur.post(api('/learning-outcomes')).send(body).expect(201);
+    await cur.post(api('/learning-outcomes')).send(body).expect(409);
+    await cur.put(api(`/learning-outcomes/${o.body.id}`)).send({ ...body, description: 'Menyelesaikan persamaan dan pertidaksamaan linear.' }).expect(200);
+    const list = await cur.get(api(`/learning-outcomes?subjectId=${s.mathId}`)).expect(200);
+    expect(list.body).toEqual([expect.objectContaining({ code: 'CP-1', description: 'Menyelesaikan persamaan dan pertidaksamaan linear.' })]);
+  });
+});

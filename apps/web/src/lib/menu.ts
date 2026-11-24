@@ -37,6 +37,7 @@ const MENU: MenuDef[] = [
   { href: "/academics/calendar", label: "Kalender akademik", group: "Utama", icon: "calendar", roles: ["TEACHER", "STAFF", "STUDENT", "GUARDIAN"], keywords: "agenda ujian libur rapor semester" },
   { href: "/academics/classes", label: "Rombel", group: "Akademik", icon: "classes", permission: "classes:read", keywords: "kelas rombongan belajar wali kelas penempatan" },
   { href: "/academics/timetable", label: "Jadwal pelajaran", group: "Akademik", icon: "timetable", permission: "classes:read", keywords: "jadwal benturan terbit" },
+  { href: "/academics/grading", label: "Skema nilai", group: "Akademik", icon: "chart", permission: "grading:read", keywords: "bobot komponen nilai kktp capaian pembelajaran rapor" },
   { href: "/academics/setup", label: "Pengaturan akademik", group: "Akademik", icon: "settings", permission: "classes:read", keywords: "tingkat program jurusan mapel mata pelajaran jam pelajaran penugasan guru" },
   { href: "/admin/students", label: "Siswa", group: "Data induk", icon: "students", permission: "people:read", keywords: "murid nis nisn" },
   { href: "/admin/employees", label: "Pegawai", group: "Data induk", icon: "staff", permission: "people:read", keywords: "guru staf nip" },

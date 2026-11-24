@@ -23,6 +23,7 @@ import { AcademicsModule } from './academics/academics.module.js';
 import { CommunicationsModule } from './communications/communications.module.js';
 import { AttendanceModule } from './attendance/attendance.module.js';
 import { StaffModule } from './staff/staff.module.js';
+import { GradingModule } from './grading/grading.module.js';
 
 /**
  * Modular monolith: setiap domain menjadi module sendiri dan hanya berbagi data lewat service.
@@ -48,6 +49,7 @@ import { StaffModule } from './staff/staff.module.js';
     CommunicationsModule,
     AttendanceModule,
     StaffModule,
+    GradingModule,
   ],
   controllers: [HealthController],
   providers: [
