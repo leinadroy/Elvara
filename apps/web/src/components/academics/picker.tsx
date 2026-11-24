@@ -12,7 +12,7 @@ export function Picker({
   submitLabel = "Tampilkan",
 }: {
   action: string;
-  fields: { name: string; label: string; value?: string | null; options: { value: string; label: string }[]; placeholder?: string; type?: "select" | "date" }[];
+  fields: { name: string; label: string; value?: string | null; options: { value: string; label: string }[]; placeholder?: string; type?: "select" | "date" | "text" }[];
   keep?: Record<string, string | undefined>;
   submitLabel?: string;
 }) {
@@ -24,6 +24,8 @@ export function Picker({
           {f.label}
           {f.type === "date" ? (
             <input type="date" name={f.name} defaultValue={f.value ?? ""} className={`${selectClass} w-40`} />
+          ) : f.type === "text" ? (
+            <input type="search" name={f.name} defaultValue={f.value ?? ""} placeholder={f.placeholder} className={`${selectClass} w-48`} />
           ) : (
             <select name={f.name} defaultValue={f.value ?? ""} className={`${selectClass} min-w-40`}>
               {f.placeholder !== undefined && <option value="">{f.placeholder}</option>}

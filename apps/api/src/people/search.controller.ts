@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Controller, Get, Query } from '@nestjs/common';
 import { SearchQuerySchema, type SearchHit, type SearchResult } from '@smart-school/contracts';
 import type { z } from 'zod';
@@ -12,6 +13,7 @@ const LIMIT = 6;
  * Pencarian global untuk kotak cari di header. Setiap jenis data hanya dicari bila peran aktif berhak;
  * wali hanya menemukan anaknya sendiri. Mata pelajaran ditambahkan saat modul akademik (R1) tersedia.
  */
+@ApiTags('Pencarian')
 @Controller('search')
 export class SearchController {
   constructor(

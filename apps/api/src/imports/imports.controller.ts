@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { ImportStudentsSchema, UuidParamSchema } from '@smart-school/contracts';
@@ -7,6 +8,7 @@ import { CurrentAuth, RequirePermissions } from '../auth/decorators.js';
 import { requestMeta } from '../common/request-meta.js';
 import { ImportsService } from './imports.service.js';
 
+@ApiTags('Impor')
 @Controller('imports')
 @RequirePermissions('imports:manage')
 export class ImportsController {

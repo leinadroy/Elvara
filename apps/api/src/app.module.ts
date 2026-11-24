@@ -7,6 +7,8 @@ import { validateEnv } from './config/env.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { HealthController } from './health/health.controller.js';
 import { RequestIdMiddleware } from './common/request-id.middleware.js';
+import { RequestLogMiddleware } from './common/request-log.middleware.js';
+import { JobStatusModule } from './common/job-status.service.js';
 import { ApiExceptionFilter } from './common/api-exception.filter.js';
 import { createValidationPipe } from './common/validation.js';
 import { AuditModule } from './audit/audit.module.js';
@@ -32,6 +34,7 @@ import { StaffModule } from './staff/staff.module.js';
     ConfigModule.forRoot({ isGlobal: true, cache: true, validate: validateEnv }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
     ScheduleModule.forRoot(),
+    JobStatusModule,
     PrismaModule,
     AuditModule,
     AuthModule,
@@ -55,6 +58,6 @@ import { StaffModule } from './staff/staff.module.js';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestIdMiddleware).forRoutes('*path');
+    consumer.apply(RequestIdMiddleware, RequestLogMiddleware).forRoutes('*path');
   }
 }

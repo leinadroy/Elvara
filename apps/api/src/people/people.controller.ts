@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Get, HttpCode, NotFoundException, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import {
@@ -25,6 +26,7 @@ import { StudentsService } from './students.service.js';
 
 const Id = { schema: UuidParamSchema };
 
+@ApiTags('Data induk')
 @Controller('students')
 export class StudentsController {
   constructor(
@@ -74,6 +76,7 @@ export class StudentsController {
   }
 }
 
+@ApiTags('Data induk')
 @Controller('student-guardians')
 export class StudentGuardiansController {
   constructor(private readonly guardians: GuardiansService) {}
@@ -92,6 +95,7 @@ export class StudentGuardiansController {
   }
 }
 
+@ApiTags('Data induk')
 @Controller('employees')
 export class EmployeesController {
   constructor(private readonly employees: EmployeesService) {}
@@ -127,6 +131,7 @@ export class EmployeesController {
   }
 }
 
+@ApiTags('Data induk')
 @Controller('guardians')
 export class GuardiansController {
   constructor(private readonly guardians: GuardiansService) {}
@@ -145,6 +150,7 @@ export class GuardiansController {
 }
 
 /** Portal wali: data dibatasi ke anak dengan hubungan terverifikasi. */
+@ApiTags('Data induk')
 @Controller('guardian')
 @RequireActiveRole('GUARDIAN')
 export class GuardianPortalController {
@@ -162,6 +168,7 @@ export class GuardianPortalController {
 }
 
 /** Data diri pengguna yang sedang masuk (semua peran). */
+@ApiTags('Data induk')
 @Controller('me')
 export class MeController {
   constructor(private readonly prisma: PrismaService) {}

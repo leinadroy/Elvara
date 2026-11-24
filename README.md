@@ -1,6 +1,6 @@
-# Smart School
+# Elvara School Ecosystem
 
-Platform manajemen sekolah terpadu. Kebutuhan produk dan cakupan rilis ada di [`docs/prd.md`](docs/prd.md). Rancangan produk dan teknis ada di [`docs/`](docs/smart_school_management_ecosystem.md); catatan induknya di [`docs/smart_school_master_note.md`](docs/smart_school_master_note.md).
+Platform manajemen sekolah terpadu (nama kerja repo: Smart School). Kebutuhan produk dan cakupan rilis ada di [`docs/prd.md`](docs/prd.md). Rancangan produk dan teknis ada di [`docs/`](docs/smart_school_management_ecosystem.md); catatan induknya di [`docs/smart_school_master_note.md`](docs/smart_school_master_note.md).
 
 ## Struktur
 
@@ -33,12 +33,13 @@ npm run dev                         # contracts (watch) + API :4000 + web :3000
 
 Hentikan database dengan `npm run db:down`; lihat status dan URL-nya dengan `npm run db:status -w api`.
 
-**Masuk pertama kali:** buka http://localhost:3000/login dan pakai akun contoh dari `apps/api/prisma/seed.ts` (admin, kepala sekolah, guru, wali). Akun lain dibuat lewat tautan undangan dari halaman siswa/pegawai.
+**Masuk pertama kali:** buka http://localhost:3000/login dan pakai akun contoh dari `apps/api/prisma/seed.ts` (admin, kurikulum, kepala sekolah, guru, staf, siswa, wali). Akun lain dibuat lewat tautan undangan dari halaman siswa/pegawai.
 
 **Port bentrok?** Bila port 4000 dipakai aplikasi lain, ubah `PORT` di `apps/api/.env` dan `API_URL` di `apps/web/.env.local` ke port yang sama (mis. 4100). Web meneruskan `/api/v1/*` ke `API_URL`, jadi browser cukup mengakses port 3000.
 
 - Web: http://localhost:3000
-- API: http://localhost:4000/api/v1/health
+- API: http://localhost:4000/api/v1/health (status database dan job terjadwal)
+- Dokumentasi API (OpenAPI, hanya di luar produksi): http://localhost:4000/api/v1/docs, JSON di `/api/v1/docs-json`
 
 ## Perintah lain
 
@@ -56,4 +57,6 @@ Hentikan database dengan `npm run db:down`; lihat status dan URL-nya dengan `npm
 - Semua endpoint di bawah `/api/v1`.
 - Setiap respons membawa header `x-request-id`; kesalahan memakai format `{ code, message, requestId, fieldErrors? }` (`packages/contracts`).
 - Env API divalidasi saat start; aplikasi gagal start bila `DATABASE_URL` tidak valid.
-- Skema database R0 dijelaskan di [`docs/r0-data-model.md`](docs/r0-data-model.md).
+- Skema database R0 dan R1 dijelaskan di [`docs/r0-data-model.md`](docs/r0-data-model.md); keputusan produk/arsitektur di [`docs/adr/`](docs/adr/README.md).
+- Log API: satu baris per permintaan (requestId, metode, path tanpa query, status, durasi, pengguna). Format JSON di produksi atau dengan `LOG_JSON=true`.
+- Job terjadwal (finalisasi absensi tiap 10 menit) melapor ke `/api/v1/health`; status `degraded` bila job gagal atau berhenti.

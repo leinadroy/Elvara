@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Get, HttpCode, Param, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { CorrectionListQuerySchema, CreateCorrectionSchema, ReviewCorrectionSchema, UuidParamSchema } from '@smart-school/contracts';
@@ -9,6 +10,7 @@ import { CorrectionsService } from './corrections.service.js';
 
 const Id = { schema: UuidParamSchema };
 
+@ApiTags('Koreksi data')
 @Controller()
 export class CorrectionsController {
   constructor(private readonly corrections: CorrectionsService) {}

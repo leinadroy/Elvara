@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Controller, Get, Logger } from '@nestjs/common';
 import { MFA_RECOMMENDED_ROLES, type DashboardMetric, type DashboardSummary } from '@smart-school/contracts';
 import type { AuthContext } from '../auth/auth.types.js';
@@ -9,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { GuardiansService } from './guardians.service.js';
 
 /** Ringkasan beranda per peran. Angka dihitung langsung dari data (tanpa cache) dan disaring sesuai izin. */
+@ApiTags('Beranda')
 @Controller('dashboard')
 export class DashboardController {
   private readonly logger = new Logger(DashboardController.name);

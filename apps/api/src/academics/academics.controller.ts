@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import {
@@ -38,6 +39,7 @@ const UpdateAssignmentSchema = z.object({ employeeId: z.uuid().optional(), weekl
 const TermClassSchema = z.object({ termId: z.uuid({ error: 'Pilih semester.' }), classGroupId: z.uuid({ error: 'Pilih rombel.' }) });
 const PortalQuery = z.object({ studentId: z.uuid().optional() });
 
+@ApiTags('Akademik')
 @Controller()
 export class AcademicsController {
   constructor(

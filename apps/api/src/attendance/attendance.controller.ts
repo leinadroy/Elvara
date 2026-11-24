@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Get, HttpCode, Param, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import {
@@ -20,6 +21,7 @@ import { AttendanceService } from './attendance.service.js';
 const PersonalQuery = PersonalAttendanceQuerySchema.extend({ studentId: z.uuid().optional() });
 
 /** Hak akses rinci (guru penugasan, wali kelas, admin) diperiksa di service berdasarkan data. */
+@ApiTags('Absensi')
 @Controller()
 export class AttendanceController {
   constructor(private readonly attendance: AttendanceService) {}

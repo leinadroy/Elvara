@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import {
@@ -16,6 +17,7 @@ import { requestMeta } from '../common/request-meta.js';
 import { AcademicYearsService } from './academic-years.service.js';
 import { SchoolService } from './school.service.js';
 
+@ApiTags('Sekolah')
 @Controller()
 export class SchoolController {
   constructor(private readonly school: SchoolService) {}
@@ -73,6 +75,7 @@ export class SchoolController {
   }
 }
 
+@ApiTags('Sekolah')
 @Controller('academic-years')
 export class AcademicYearsController {
   constructor(private readonly years: AcademicYearsService) {}

@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Get, HttpCode, Param, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { CancelWorkShiftSchema, MyWorkShiftQuerySchema, UuidParamSchema, WorkShiftQuerySchema, WorkShiftSchema } from '@smart-school/contracts';
@@ -7,6 +8,7 @@ import { CurrentAuth, RequirePermissions } from '../auth/decorators.js';
 import { requestMeta } from '../common/request-meta.js';
 import { WorkShiftsService } from './work-shifts.service.js';
 
+@ApiTags('Pegawai')
 @Controller()
 export class StaffController {
   constructor(private readonly shifts: WorkShiftsService) {}

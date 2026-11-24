@@ -1,3 +1,4 @@
+import request from 'supertest';
 import type { INestApplication } from '@nestjs/common';
 import type { App } from 'supertest/types.js';
 import { AttendanceService } from '../src/attendance/attendance.service.js';
@@ -409,5 +410,34 @@ describe('R1 jadwal tugas staf (FR-8.5, ADR 0004)', () => {
     // Pimpinan boleh melihat, tidak boleh mengubah.
     const list = await admin.get(api(`/work-shifts?from=${t}&to=${t}`)).expect(200);
     expect(list.body).toHaveLength(4);
+  });
+});
+
+describe('R1 audit & observabilitas (FR-9.3, PRD bagian 8)', () => {
+  it('audit bisa dicari per objek, pelaku (email), dan periode', async () => {
+    const a = await setupClass('7A', [0]);
+    const admin = await loginAs(app, fx.emails.admin);
+    const t = today();
+
+    const byActor = await admin.get(api('/audit-events?actor=kurikulum@&pageSize=100')).expect(200);
+    expect(byActor.body.total).toBeGreaterThan(0);
+    expect(byActor.body.items.every((e: { actor: { email: string } | null }) => e.actor?.email === fx.emails.curriculum)).toBe(true);
+
+    const byObject = await admin.get(api(`/audit-events?entityType=class_group&entityId=${a.cls}`)).expect(200);
+    expect(byObject.body.items.map((e: { action: string }) => e.action)).toEqual(expect.arrayContaining(['class_group.create', 'homeroom.assign']));
+
+    expect((await admin.get(api(`/audit-events?from=${t}&to=${t}`)).expect(200)).body.total).toBeGreaterThan(0);
+    expect((await admin.get(api(`/audit-events?from=${addDays(t, -10)}&to=${addDays(t, -9)}`)).expect(200)).body.total).toBe(0);
+    await admin.get(api(`/audit-events?from=${t}&to=${addDays(t, -1)}`)).expect(422);
+
+    const teacher = await loginAs(app, fx.emails.teacher);
+    await teacher.get(api('/audit-events')).expect(403);
+  });
+
+  it('health check melaporkan database dan status job; respons membawa request id', async () => {
+    const res = await request(app.getHttpServer()).get(api('/health')).expect(200);
+    expect(res.body.checks.database).toBe('up');
+    expect(res.body.jobs['attendance-finalize']).toMatchObject({ state: expect.stringMatching(/pending|ok/), consecutiveFailures: 0 });
+    expect(res.headers['x-request-id']).toBeTruthy();
   });
 });

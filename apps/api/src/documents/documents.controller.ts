@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
@@ -12,6 +13,7 @@ const Id = { schema: UuidParamSchema };
 /** Batas keras di level parser; batas sebenarnya (MAX_UPLOAD_MB) diperiksa di service. */
 const HARD_LIMIT = 50 * 1024 * 1024;
 
+@ApiTags('Dokumen')
 @Controller()
 export class DocumentsController {
   constructor(private readonly documents: DocumentsService) {}

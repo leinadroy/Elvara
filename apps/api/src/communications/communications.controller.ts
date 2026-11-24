@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Get, HttpCode, Param, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { CreateAnnouncementSchema, NotificationQuerySchema, UuidParamSchema } from '@smart-school/contracts';
@@ -8,6 +9,7 @@ import { requestMeta } from '../common/request-meta.js';
 import { AnnouncementsService } from './announcements.service.js';
 import { NotificationsService } from './notifications.service.js';
 
+@ApiTags('Komunikasi')
 @Controller()
 export class CommunicationsController {
   constructor(

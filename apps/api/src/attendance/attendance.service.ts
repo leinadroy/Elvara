@@ -23,10 +23,13 @@ import { fromDbDate, toDbDate } from '../common/dates.js';
 import type { RequestMeta } from '../common/request-meta.js';
 import { addDays, endOfDayIn, isoDayOfWeek, todayIn } from '../common/school-time.js';
 import { NotificationsService } from '../communications/notifications.service.js';
+import { JobStatusService } from '../common/job-status.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 type Tx = Prisma.TransactionClient;
+const FINALIZE_JOB = 'attendance-finalize';
+const FINALIZE_INTERVAL_MS = 10 * 60_000;
 /** Tanggal kalender (kolom DATE, UTC tengah malam) → "23 November 2026". */
 const LONG_DATE = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 
@@ -63,7 +66,10 @@ export class AttendanceService {
     private readonly scope: ScopeService,
     private readonly timetable: TimetableService,
     private readonly notifications: NotificationsService,
-  ) {}
+    private readonly jobs: JobStatusService,
+  ) {
+    this.jobs.register(FINALIZE_JOB, FINALIZE_INTERVAL_MS);
+  }
 
   private async tz(schoolId: string) {
     return (await this.prisma.school.findUniqueOrThrow({ where: { id: schoolId }, select: { timezone: true } })).timezone;
@@ -320,14 +326,16 @@ export class AttendanceService {
     return count;
   }
 
-  @Interval('attendance-finalize', 10 * 60_000)
+  @Interval(FINALIZE_JOB, FINALIZE_INTERVAL_MS)
   async finalizeJob() {
     if (process.env.NODE_ENV === 'test') return;
     try {
       const n = await this.finalizeDue();
-      if (n) this.logger.log(`Finalisasi absensi: ${n} sesi.`);
+      this.jobs.succeeded(FINALIZE_JOB);
+      if (n) this.logger.log({ job: FINALIZE_JOB, finalizedSessions: n });
     } catch (err) {
-      this.logger.error('Finalisasi absensi gagal', err as Error);
+      this.jobs.failed(FINALIZE_JOB);
+      this.logger.error({ job: FINALIZE_JOB, message: 'Finalisasi absensi gagal', error: (err as Error).message }, (err as Error).stack);
     }
   }
 

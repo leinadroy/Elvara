@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Get, HttpCode, Post, Req, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
@@ -23,6 +24,7 @@ import { CurrentAuth, Public } from './decorators.js';
 const ChangePasswordSchema = z.object({ currentPassword: z.string().min(1).max(200), newPassword: PasswordSchema });
 const loginLimit = () => Number(process.env.LOGIN_RATE_LIMIT ?? 10);
 
+@ApiTags('Autentikasi')
 @Controller('auth')
 export class AuthController {
   private readonly secureCookie: boolean;

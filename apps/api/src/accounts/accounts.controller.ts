@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Get, HttpCode, Param, Post, Put, Req, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
@@ -17,6 +18,7 @@ import { requestMeta } from '../common/request-meta.js';
 import { AccountsService } from './accounts.service.js';
 import { InvitationsService } from './invitations.service.js';
 
+@ApiTags('Akun')
 @Controller()
 export class AccountsController {
   constructor(private readonly accounts: AccountsService) {}
@@ -73,6 +75,7 @@ export class AccountsController {
 }
 
 /** Endpoint publik untuk penerima undangan. */
+@ApiTags('Akun')
 @Controller('invitations')
 export class InvitationsController {
   private readonly secureCookie: boolean;

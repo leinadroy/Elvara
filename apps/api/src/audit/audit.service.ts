@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { AuditEventView, Paginated } from '@smart-school/contracts';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { addDays, atTimeIn } from '../common/school-time.js';
 
 type Tx = Prisma.TransactionClient | PrismaService;
 
@@ -39,14 +40,26 @@ export class AuditService {
 
   async list(
     schoolId: string,
-    q: { page: number; pageSize: number; entityType?: string; entityId?: string; actorUserId?: string; action?: string },
+    q: { page: number; pageSize: number; entityType?: string; entityId?: string; actorUserId?: string; actor?: string; action?: string; from?: string; to?: string },
   ): Promise<Paginated<AuditEventView>> {
+    // Periode dihitung pada zona waktu sekolah agar "tanggal 23" berarti 00.00–24.00 waktu sekolah.
+    const tz = q.from || q.to ? (await this.prisma.school.findUniqueOrThrow({ where: { id: schoolId }, select: { timezone: true } })).timezone : 'UTC';
+    let actorFilter: string[] | undefined;
+    if (q.actor) {
+      const users = await this.prisma.user.findMany({ where: { email: { contains: q.actor } }, select: { id: true }, take: 50 });
+      actorFilter = users.map((u) => u.id);
+    }
     const where: Prisma.AuditEventWhereInput = {
       schoolId,
       entityType: q.entityType,
       entityId: q.entityId,
-      actorUserId: q.actorUserId,
       action: q.action ? { startsWith: q.action } : undefined,
+      AND: [
+        ...(q.actorUserId ? [{ actorUserId: q.actorUserId }] : []),
+        ...(actorFilter ? [{ actorUserId: { in: actorFilter } }] : []),
+        ...(q.from ? [{ createdAt: { gte: atTimeIn(q.from, '00:00', tz) } }] : []),
+        ...(q.to ? [{ createdAt: { lt: atTimeIn(addDays(q.to, 1), '00:00', tz) } }] : []),
+      ],
     };
     const [total, rows] = await this.prisma.$transaction([
       this.prisma.auditEvent.count({ where }),
