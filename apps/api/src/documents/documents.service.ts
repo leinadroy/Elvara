@@ -10,29 +10,10 @@ import { validationFailed } from '../common/api-exception.filter.js';
 import type { RequestMeta } from '../common/request-meta.js';
 import type { Env } from '../config/env.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { safeFileName, sniffMime, type UploadedFile } from './files.js';
 import { StorageService } from './storage.service.js';
 
-export interface UploadedFile {
-  originalname: string;
-  size: number;
-  buffer: Buffer;
-}
-
-/** Jenis file dikenali dari byte awal (magic number), bukan dari ekstensi atau Content-Type kiriman browser. */
-function sniffMime(buf: Buffer): string | null {
-  if (buf.subarray(0, 5).toString('latin1') === '%PDF-') return 'application/pdf';
-  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
-  if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
-  return null;
-}
-
-const EXT: Record<string, string> = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png' };
-
-/** Nama file aman untuk header Content-Disposition. */
-function safeFileName(name: string, mime: string): string {
-  const base = name.replace(/\.[^.]*$/, '').replace(/[^\p{L}\p{N} ._-]+/gu, '_').trim().slice(0, 80) || 'dokumen';
-  return `${base}.${EXT[mime] ?? 'bin'}`;
-}
+export type { UploadedFile } from './files.js';
 
 @Injectable()
 export class DocumentsService {

@@ -191,3 +191,24 @@ export interface MyTeachingAssignment {
   assessments: number;
   unpublished: number;
 }
+
+// ───────────── Nilai di portal siswa dan wali (PRD R2 E14) ─────────────
+
+export const PortalGradesQuerySchema = z.object({ studentId: z.uuid().optional(), termId: z.uuid().optional() });
+
+/** Nilai satu mapel untuk siswa: hanya penilaian terbit; nilai akhir dihitung dengan aturan yang sama dengan buku nilai. */
+export interface PortalSubjectGrades {
+  teachingAssignmentId: string;
+  subject: { id: string; code: string; name: string };
+  teacher: string;
+  scheme: { versionNo: number; components: { code: string; name: string; weight: number }[]; passingScore: number | null } | null;
+  assessments: { id: string; title: string; component: { code: string; name: string }; assessedOn: string | null; publishedAt: string | null; cell: GradeCell | null }[];
+  final: FinalGrade;
+}
+
+export interface PortalGrades {
+  student: { id: string; fullName: string };
+  term: { id: string; name: string } | null;
+  classGroup: { id: string; code: string } | null;
+  subjects: PortalSubjectGrades[];
+}

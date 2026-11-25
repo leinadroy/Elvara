@@ -221,3 +221,152 @@ describe('R2 penilaian & buku nilai (E13)', () => {
     expect(audit.body.items.map((x: { action: string }) => x.action)).toEqual(expect.arrayContaining(['assessment.create', 'grade.save', 'assessment.publish', 'grade.correct']));
   });
 });
+
+describe('R2 tugas & pengumpulan (E12)', () => {
+  const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
+  const iso = (msFromNow: number) => new Date(Date.now() + msFromNow).toISOString();
+
+  async function withScheme() {
+    const a = await setupClass(app, fx, s, '7A', [2]);
+    const v = await a.cur
+      .post(api('/grade-schemes'))
+      .send({ termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 40 }, { code: 'SAS', name: 'Sumatif akhir', weight: 60 }] })
+      .expect(201);
+    await a.cur.post(api(`/grade-schemes/${v.body.id}/publish`)).expect(204);
+    return a;
+  }
+
+  it('siswa mengirim versi teks/berkas, idempoten, guru melihat kiriman dan menilai lewat penilaian tertaut', async () => {
+    const a = await withScheme();
+    const teacher = await loginAs(app, fx.emails.teacher);
+    const formatif = (await teacher.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200)).body.scheme.components[0].id;
+    const act = await teacher
+      .post(api('/activities'))
+      .send({ teachingAssignmentId: a.ta, title: 'Tugas persamaan linear', instructions: 'Kerjakan nomor 1–5.', opensAt: iso(-3600_000), dueAt: iso(86_400_000), componentId: formatif })
+      .expect(201);
+    await teacher.post(api('/activities')).send({ teachingAssignmentId: a.ta, title: 'Terbalik', opensAt: iso(1000), dueAt: iso(-1000) }).expect(422);
+
+    const student = await loginAs(app, s.studentEmail);
+    expect((await student.get(api('/me/activities')).expect(200)).body).toHaveLength(0);
+    await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-awal-1').field('text', 'Jawaban').expect(409);
+    await teacher.post(api(`/activities/${act.body.id}/publish`)).expect(204);
+
+    const list = await student.get(api('/me/activities')).expect(200);
+    expect(list.body).toEqual([expect.objectContaining({ id: act.body.id, canSubmit: true, mine: expect.objectContaining({ state: 'NOT_SUBMITTED' }), assessment: expect.objectContaining({ status: 'DRAFT' }) })]);
+    await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-kosong').expect(422);
+    const v1 = await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-teks-1').field('text', 'x = 4').expect(201);
+    expect(v1.body).toMatchObject({ versionNo: 1, late: false, duplicate: false });
+    const again = await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-teks-1').field('text', 'x = 4').expect(201);
+    expect(again.body).toMatchObject({ versionNo: 1, duplicate: true });
+    await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-berkas-2').attach('file', Buffer.from('bukan pdf'), 'x.pdf').expect(422);
+    const v2 = await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-berkas-2').attach('file', PDF, 'jawaban saya.pdf').expect(201);
+    expect(v2.body.versionNo).toBe(2);
+
+    const other = await loginAs(app, s.otherStudentEmail);
+    await other.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-lain-1').field('text', 'coba').expect(403);
+    await other.get(api(`/me/activities/${act.body.id}`)).expect(404);
+
+    const detail = await teacher.get(api(`/activities/${act.body.id}`)).expect(200);
+    expect(detail.body).toMatchObject({ canEdit: true, counts: { total: 1, onTime: 1, late: 0, notSubmitted: 0 } });
+    const row = detail.body.submissions[0];
+    expect(row).toMatchObject({ state: 'ON_TIME', grade: null });
+    expect(row.versions.map((v: { versionNo: number }) => v.versionNo)).toEqual([1, 2]);
+    const url = row.versions[1].file.url.replace('/api/v1', '');
+    expect(row.versions[1].file).toMatchObject({ name: 'jawaban saya.pdf', mimeType: 'application/pdf' });
+
+    const dl = await teacher.get(api(url)).expect(200);
+    expect(Buffer.from(dl.body as Buffer).equals(PDF)).toBe(true);
+    const guardian = await loginAs(app, s.guardianEmail);
+    await guardian.get(api(url)).expect(200);
+    expect((await guardian.get(api('/me/activities')).expect(200)).body[0].mine.state).toBe('ON_TIME');
+    await other.get(api(url)).expect(404);
+
+    // Nilai tugas tertaut: tidak terlihat siswa sampai penilaian terbit.
+    const assessmentId = detail.body.assessment.id;
+    await teacher.put(api(`/assessments/${assessmentId}/grades`)).send({ entries: [{ studentId: fx.studentIds[2], state: 'SCORED', score: 88, feedback: 'Langkah lengkap' }] }).expect(200);
+    expect((await student.get(api(`/me/activities/${act.body.id}`)).expect(200)).body.grade).toBeNull();
+    await teacher.post(api(`/assessments/${assessmentId}/publish`)).expect(204);
+    expect((await student.get(api(`/me/activities/${act.body.id}`)).expect(200)).body.grade).toMatchObject({ state: 'SCORED', score: 88, feedback: 'Langkah lengkap' });
+    await teacher.post(api(`/activities/${act.body.id}/cancel`)).expect(409);
+
+    const admin = await loginAs(app, fx.emails.admin);
+    const audit = await admin.get(api(`/audit-events?entityType=learning_activity&entityId=${act.body.id}`)).expect(200);
+    expect(audit.body.items.map((x: { action: string }) => x.action)).toEqual(expect.arrayContaining(['activity.create', 'activity.published', 'submission.create', 'submission.download']));
+  });
+
+  it('tenggat lewat: ditolak bila tidak mengizinkan terlambat, diterima sebagai terlambat bila diizinkan', async () => {
+    const a = await withScheme();
+    const teacher = await loginAs(app, fx.emails.teacher);
+    const body = { title: 'Ringkasan bab 1', instructions: '', opensAt: iso(-7200_000), dueAt: iso(-60_000), kind: 'ASSIGNMENT', allowLate: false, allowResubmit: false, acceptsSubmissions: true };
+    const act = await teacher.post(api('/activities')).send({ teachingAssignmentId: a.ta, ...body }).expect(201);
+    await teacher.post(api(`/activities/${act.body.id}/publish`)).expect(204);
+    const student = await loginAs(app, s.studentEmail);
+    const view = await student.get(api(`/me/activities/${act.body.id}`)).expect(200);
+    expect(view.body).toMatchObject({ canSubmit: false, blockedReason: 'Tenggat sudah lewat dan tugas ini tidak menerima kiriman terlambat.' });
+    await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-telat-1').field('text', 'telat').expect(409);
+
+    await teacher.put(api(`/activities/${act.body.id}`)).send({ ...body, allowLate: true }).expect(204);
+    const late = await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-telat-2').field('text', 'telat tapi diterima').expect(201);
+    expect(late.body).toMatchObject({ late: true });
+    // Kirim ulang tidak diizinkan.
+    await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-telat-3').field('text', 'ubah').expect(409);
+    expect((await teacher.get(api(`/activities/${act.body.id}`)).expect(200)).body.counts).toMatchObject({ late: 1, onTime: 0 });
+    await teacher.post(api(`/activities/${act.body.id}/close`)).expect(204);
+    expect((await student.get(api(`/me/activities/${act.body.id}`)).expect(200)).body.blockedReason).toBe('Tugas sudah ditutup guru.');
+  });
+});
+
+describe('R2 nilai di portal & notifikasi (E14)', () => {
+  it('siswa dan wali hanya melihat nilai terbit; notifikasi saat nilai dan tugas terbit', async () => {
+    const a = await setupClass(app, fx, s, '7A', [0, 2]);
+    const v = await a.cur
+      .post(api('/grade-schemes'))
+      .send({ termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId, passingScore: 75, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 50 }, { code: 'SAS', name: 'Sumatif akhir', weight: 50 }] })
+      .expect(201);
+    await a.cur.post(api(`/grade-schemes/${v.body.id}/publish`)).expect(204);
+    const teacher = await loginAs(app, fx.emails.teacher);
+    const comps = (await teacher.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200)).body.scheme.components;
+    const me = fx.studentIds[2]!;
+    const f1 = (await teacher.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId: comps[0].id, title: 'Kuis 1' }).expect(201)).body.id;
+    const sas = (await teacher.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId: comps[1].id, title: 'SAS' }).expect(201)).body.id;
+    await teacher.put(api(`/assessments/${f1}/grades`)).send({ entries: [{ studentId: me, state: 'SCORED', score: 90, feedback: 'Bagus' }] }).expect(200);
+    await teacher.put(api(`/assessments/${sas}/grades`)).send({ entries: [{ studentId: me, state: 'SCORED', score: 60 }] }).expect(200);
+
+    const student = await loginAs(app, s.studentEmail);
+    const before = await student.get(api('/me/grades')).expect(200);
+    expect(before.body.subjects).toEqual([expect.objectContaining({ subject: expect.objectContaining({ code: 'MTK' }), assessments: [] })]);
+
+    await teacher.post(api(`/assessments/${f1}/publish`)).expect(204);
+    const g1 = await student.get(api('/me/grades')).expect(200);
+    const mtk = g1.body.subjects[0];
+    expect(mtk.assessments).toEqual([expect.objectContaining({ title: 'Kuis 1', cell: expect.objectContaining({ score: 90, feedback: 'Bagus' }) })]);
+    expect(mtk.final).toMatchObject({ complete: false, issues: ['Belum ada penilaian Sumatif akhir.'] });
+    expect(mtk).toMatchObject({ teacher: 'Pegawai teacher', scheme: expect.objectContaining({ passingScore: 75 }) });
+
+    await teacher.post(api(`/assessments/${sas}/publish`)).expect(204);
+    const g2 = await student.get(api('/me/grades')).expect(200);
+    // 0.5*90 + 0.5*60 = 75 → tidak di bawah KKTP 75
+    expect(g2.body.subjects[0].final).toMatchObject({ complete: true, rounded: 75, belowPassing: false });
+
+    const guardian = await loginAs(app, s.guardianEmail);
+    const gg = await guardian.get(api('/me/grades')).expect(200);
+    expect(gg.body).toMatchObject({ student: { id: me }, classGroup: { code: '7A' } });
+    expect(gg.body.subjects[0].final.rounded).toBe(75);
+    const other = await loginAs(app, s.otherStudentEmail);
+    expect((await other.get(api('/me/grades')).expect(200)).body).toMatchObject({ classGroup: null, subjects: [] });
+    await other.get(api(`/me/grades?studentId=${me}`)).expect(403);
+    await teacher.get(api('/me/grades')).expect(403);
+
+    // Notifikasi: satu per penilaian terbit untuk siswa dan wali; tautan wali menyebut anaknya.
+    const sn = await student.get(api('/notifications')).expect(200);
+    expect(sn.body.items.filter((n: { eventType: string }) => n.eventType === 'grade.published')).toHaveLength(2);
+    const gn = (await guardian.get(api('/notifications')).expect(200)).body.items.filter((n: { eventType: string }) => n.eventType === 'grade.published');
+    expect(gn).toHaveLength(2);
+    expect(gn[0].link).toBe(`/guardian/grades?studentId=${me}`);
+
+    const act = await teacher.post(api('/activities')).send({ teachingAssignmentId: a.ta, title: 'Tugas baru', opensAt: new Date(Date.now() - 60_000).toISOString(), dueAt: new Date(Date.now() + 86_400_000).toISOString() }).expect(201);
+    await teacher.post(api(`/activities/${act.body.id}/publish`)).expect(204);
+    const an = (await student.get(api('/notifications')).expect(200)).body.items.filter((n: { eventType: string }) => n.eventType === 'activity.published');
+    expect(an).toEqual([expect.objectContaining({ title: 'Tugas baru Matematika', link: `/student/assignments/${act.body.id}` })]);
+  });
+});

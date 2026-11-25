@@ -11,6 +11,7 @@ import type { RequestMeta } from '../common/request-meta.js';
 import { todayIn } from '../common/school-time.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { computeFinal } from './compute.js';
+import { PortalGradesService } from './portal-grades.service.js';
 import { SchemesService } from './schemes.service.js';
 
 const emptyCounts = (): Record<GradeState, number> => ({ PENDING: 0, SCORED: 0, MISSING: 0, EXCUSED: 0 });
@@ -27,6 +28,7 @@ export class GradebookService {
     private readonly audit: AuditService,
     private readonly scope: ScopeService,
     private readonly schemes: SchemesService,
+    private readonly portal: PortalGradesService,
   ) {}
 
   private async today(schoolId: string) {
@@ -60,7 +62,8 @@ export class GradebookService {
     }));
   }
 
-  private async assignment(auth: AuthContext, id: string) {
+  /** Penugasan mengajar beserta mapel, rombel, semester, guru. */
+  async loadAssignment(auth: AuthContext, id: string) {
     const ta = await this.prisma.teachingAssignment.findFirst({
       where: { id, schoolId: auth.schoolId },
       include: {
@@ -75,7 +78,7 @@ export class GradebookService {
   }
 
   /** canEdit: guru penugasan. canRead: guru, grading:read, atau wali kelas rombel itu hari ini. */
-  private async access(auth: AuthContext, ta: { employeeId: string; classGroupId: string }) {
+  async checkAccess(auth: AuthContext, ta: { employeeId: string; classGroupId: string }) {
     const emp = await this.scope.employee(auth);
     const canEdit = !!emp && emp.id === ta.employeeId;
     if (canEdit || auth.permissions.has('grading:read')) return { canEdit };
@@ -86,14 +89,14 @@ export class GradebookService {
     throw new ForbiddenException('Anda tidak memiliki akses ke buku nilai ini.');
   }
 
-  private async requireTeacher(auth: AuthContext, ta: { employeeId: string }) {
+  async requireTeacher(auth: AuthContext, ta: { employeeId: string }) {
     const emp = await this.scope.employee(auth);
     if (!emp || emp.id !== ta.employeeId) throw new ForbiddenException('Hanya guru penugasan ini yang dapat mengubah penilaian dan nilai.');
   }
 
   async gradebook(auth: AuthContext, taId: string): Promise<Gradebook> {
-    const ta = await this.assignment(auth, taId);
-    const { canEdit } = await this.access(auth, ta);
+    const ta = await this.loadAssignment(auth, taId);
+    const { canEdit } = await this.checkAccess(auth, ta);
     const today = await this.today(auth.schoolId);
     const [scheme, assessments, enrollments] = await Promise.all([
       this.schemes.published(ta.termId, ta.subjectId, ta.classGroup.gradeLevelId),
@@ -150,7 +153,7 @@ export class GradebookService {
   }
 
   async createAssessment(auth: AuthContext, input: z.infer<typeof AssessmentSchema>, meta: RequestMeta) {
-    const ta = await this.assignment(auth, input.teachingAssignmentId);
+    const ta = await this.loadAssignment(auth, input.teachingAssignmentId);
     await this.requireTeacher(auth, ta);
     const scheme = await this.schemes.published(ta.termId, ta.subjectId, ta.classGroup.gradeLevelId);
     if (!scheme) throw conflict('Skema nilai mapel ini belum terbit. Hubungi bagian kurikulum.');
@@ -251,12 +254,13 @@ export class GradebookService {
     if (a.status === 'PUBLISHED') throw conflict('Penilaian sudah terbit.');
     await this.prisma.assessment.update({ where: { id }, data: { status: 'PUBLISHED', publishedAt: new Date(), publishedById: auth.userId } });
     await this.audit.record({ schoolId: auth.schoolId, actorUserId: auth.userId, action: 'assessment.publish', entityType: 'assessment', entityId: id, requestId: meta.requestId, metadata: { title: a.title } });
+    await this.portal.notifyGradesPublished(id);
   }
 
   /** Riwayat perubahan nilai terbit pada satu penilaian. */
   async changes(auth: AuthContext, id: string) {
     const a = await this.loadAssessment(auth, id);
-    await this.access(auth, a.teachingAssignment);
+    await this.checkAccess(auth, a.teachingAssignment);
     const rows = await this.prisma.gradeChange.findMany({
       where: { gradeEntry: { assessmentId: id } },
       include: { gradeEntry: { select: { student: { select: { person: { select: { fullName: true } } } } } } },

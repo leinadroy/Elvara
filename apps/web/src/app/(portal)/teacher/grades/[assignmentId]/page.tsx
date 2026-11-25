@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 import type { Gradebook } from "@smart-school/contracts";
 import { ApiErrorState, EmptyState, LoadingBlock, PageHeader } from "@/components/page-states";
@@ -19,6 +20,13 @@ async function Content({ params }: PageProps<"/teacher/grades/[assignmentId]">) 
         title={`${gb.assignment.subject.name} · ${gb.assignment.classGroup.code}`}
         description={`${gb.assignment.term.name} · ${gb.assignment.teacher}${gb.canEdit ? "" : " · hanya baca"}`}
         back={{ href: gb.canEdit ? "/teacher/grades" : `/academics/classes/${gb.assignment.classGroup.id}?tab=penugasan`, label: gb.canEdit ? "Buku nilai saya" : "Rombel" }}
+        actions={
+          gb.canEdit ? (
+            <Link href={`/teacher/assignments?ta=${gb.assignment.id}`} className="inline-flex h-8 items-center rounded-lg border px-3 text-sm hover:bg-muted">
+              Tugas kelas ini
+            </Link>
+          ) : undefined
+        }
       />
       {gb.scheme ? (
         <p className="text-sm text-muted-foreground">

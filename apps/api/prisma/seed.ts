@@ -282,6 +282,41 @@ async function main() {
     }
   }
 
+  // Tugas contoh Matematika 7A (R2 E12): terbit, tenggat 3 hari lagi, tertaut ke komponen formatif.
+  if (mtk7a && mtkScheme && !(await prisma.learningActivity.findFirst({ where: { teachingAssignmentId: mtk7a.id } }))) {
+    const guruUser = await prisma.user.findUniqueOrThrow({ where: { email: 'guru@smartschool.test' } });
+    const due = new Date(Date.now() + 3 * 86_400_000);
+    const act = await prisma.learningActivity.create({
+      data: {
+        schoolId: school.id,
+        teachingAssignmentId: mtk7a.id,
+        kind: 'ASSIGNMENT',
+        title: 'Tugas 3: tabel frekuensi',
+        instructions: 'Buat tabel frekuensi dari data tinggi badan teman sekelas (minimal 15 data), lalu jelaskan kelas dengan frekuensi terbanyak.',
+        opensAt: new Date(Date.now() - 86_400_000),
+        dueAt: due,
+        allowLate: true,
+        status: 'PUBLISHED',
+        publishedAt: new Date(),
+        createdById: guruUser.id,
+      },
+    });
+    await prisma.assessment.create({
+      data: { schoolId: school.id, teachingAssignmentId: mtk7a.id, componentId: mtkScheme.components.find((c) => c.code === 'FORMATIF')!.id, activityId: act.id, title: act.title, assessedOn: d(todayIn(school.timezone)), createdById: guruUser.id },
+    });
+    const bunga = studentIds[1]!;
+    await prisma.submission.create({
+      data: {
+        activityId: act.id,
+        studentId: bunga,
+        status: 'ON_TIME',
+        submittedAt: new Date(),
+        latestVersionNo: 1,
+        versions: { create: { versionNo: 1, text: 'Kelas 150–154 cm memiliki frekuensi terbanyak (6 siswa).', late: false, idempotencyKey: 'seed-bunga-1' } },
+      },
+    });
+  }
+
   // Agenda akademik contoh (R2 E10): terbit, kecuali satu draf.
   if (!(await prisma.academicCalendarEvent.findFirst({ where: { schoolId: school.id } }))) {
     const base = todayIn(school.timezone);

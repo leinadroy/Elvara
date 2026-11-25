@@ -8,6 +8,7 @@ import {
   GradeSchemeSchema,
   LearningOutcomeQuerySchema,
   LearningOutcomeSchema,
+  PortalGradesQuerySchema,
   SaveGradesSchema,
   UpdateGradeSchemeSchema,
   UuidParamSchema,
@@ -17,6 +18,7 @@ import type { AuthContext } from '../auth/auth.types.js';
 import { CurrentAuth, RequirePermissions } from '../auth/decorators.js';
 import { requestMeta } from '../common/request-meta.js';
 import { GradebookService } from './gradebook.service.js';
+import { PortalGradesService } from './portal-grades.service.js';
 import { SchemesService } from './schemes.service.js';
 
 @ApiTags('Penilaian')
@@ -25,6 +27,7 @@ export class GradingController {
   constructor(
     private readonly schemes: SchemesService,
     private readonly gradebooks: GradebookService,
+    private readonly portal: PortalGradesService,
   ) {}
 
   @Get('grade-schemes')
@@ -85,6 +88,12 @@ export class GradingController {
   }
 
   // ───────────── Penilaian dan buku nilai (E13). Akses rinci (guru penugasan, wali kelas) diperiksa di service. ─────────────
+
+  /** Nilai terbit untuk siswa, atau anak bagi wali (izin akademik). */
+  @Get('me/grades')
+  myGrades(@CurrentAuth() auth: AuthContext, @Query({ schema: PortalGradesQuerySchema }) q: z.infer<typeof PortalGradesQuerySchema>) {
+    return this.portal.portal(auth, q);
+  }
 
   @Get('me/teaching-assignments')
   myAssignments(@CurrentAuth() auth: AuthContext) {
