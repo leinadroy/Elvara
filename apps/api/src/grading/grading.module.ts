@@ -7,13 +7,15 @@ import { ActivitiesService } from './activities.service.js';
 import { GradebookService } from './gradebook.service.js';
 import { GradingController } from './grading.controller.js';
 import { PortalGradesService } from './portal-grades.service.js';
+import { ReportCardsController } from './report-cards.controller.js';
+import { ReportCardsService } from './report-cards.service.js';
 import { SchemesService } from './schemes.service.js';
 
-/** R2 penilaian: skema nilai, capaian pembelajaran, penilaian dan buku nilai, tugas dan pengumpulan (berikutnya: rapor). */
+/** R2 penilaian: skema nilai, capaian pembelajaran, penilaian dan buku nilai, tugas dan pengumpulan, rapor. */
 @Module({
   imports: [AcademicsModule, DocumentsModule, CommunicationsModule],
-  controllers: [GradingController, ActivitiesController],
-  providers: [SchemesService, GradebookService, ActivitiesService, PortalGradesService],
+  controllers: [GradingController, ActivitiesController, ReportCardsController],
+  providers: [SchemesService, GradebookService, ActivitiesService, PortalGradesService, ReportCardsService],
   exports: [SchemesService, GradebookService],
 })
 export class GradingModule {}

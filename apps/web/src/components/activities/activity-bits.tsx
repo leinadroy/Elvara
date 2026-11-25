@@ -1,4 +1,5 @@
 import { ACTIVITY_KIND_LABELS, ACTIVITY_STATUS_LABELS, SUBMISSION_STATE_LABELS, type ActivityView, type SubmissionState, type SubmissionVersionView } from "@smart-school/contracts";
+import { connection } from "next/server";
 import { formatDateTime } from "@/lib/format";
 
 /** Status ditampilkan sebagai teks + warna (blueprint). */
@@ -12,15 +13,17 @@ export function ActivityStatusBadge({ status }: { status: ActivityView["status"]
   return <span className={`rounded-md px-1.5 py-0.5 text-xs font-medium ${cls}`}>{ACTIVITY_STATUS_LABELS[status]}</span>;
 }
 
-export function ActivityMeta({ a }: { a: ActivityView }) {
+/** Server component: membaca jam sekarang, jadi dirender per permintaan. Span (bukan p) agar aman di dalam deskripsi PageHeader. */
+export async function ActivityMeta({ a }: { a: ActivityView }) {
+  await connection();
   const overdue = new Date(a.dueAt) < new Date();
   return (
-    <p className="text-sm text-muted-foreground">
+    <span className="block text-sm text-muted-foreground">
       {ACTIVITY_KIND_LABELS[a.kind]} · {a.teachingAssignment.subject.name} · {a.teachingAssignment.classGroup.code} · tenggat{" "}
       <span className={overdue ? "" : "font-medium text-foreground"}>{formatDateTime(a.dueAt)}</span>
       {a.allowLate && " · terlambat diterima"}
       {!a.acceptsSubmissions && " · dikerjakan di luar aplikasi"}
-    </p>
+    </span>
   );
 }
 

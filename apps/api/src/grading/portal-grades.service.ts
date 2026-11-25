@@ -95,7 +95,15 @@ export class PortalGradesService {
   private async classAudience(classGroupId: string, schoolId: string) {
     const today = await this.today(schoolId);
     const enrolled = await this.prisma.enrollment.findMany({ where: { classGroupId, ...activeOn(today) }, select: { studentId: true } });
-    const ids = enrolled.map((e) => e.studentId);
+    return this.audience(enrolled.map((e) => e.studentId));
+  }
+
+  /** Akun siswa dan wali terverifikasi berizin akademik untuk satu siswa (mis. rapor terbit). */
+  studentAudience(studentId: string) {
+    return this.audience([studentId]);
+  }
+
+  private async audience(ids: string[]) {
     const now = new Date();
     const [students, links] = await Promise.all([
       this.prisma.user.findMany({ where: { status: 'ACTIVE', person: { student: { id: { in: ids } } } }, select: { id: true, person: { select: { student: { select: { id: true } } } } } }),

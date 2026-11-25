@@ -317,6 +317,28 @@ async function main() {
     });
   }
 
+  // Rapor contoh 7A (R2 E15): deskripsi Matematika sudah diisi wali kelas/guru; mapel lain belum lengkap sehingga tampil sebagai masalah.
+  if (mtk7a && !(await prisma.reportCard.findFirst({ where: { termId: term.id, classGroupId: classes['7A']! } }))) {
+    const guruUser = await prisma.user.findUniqueOrThrow({ where: { email: 'guru@smartschool.test' } });
+    const texts: [string, string][] = [
+      ['Menyelesaikan persamaan linear satu variabel dengan tepat', 'Menyajikan data dalam diagram batang'],
+      ['Membaca dan menafsirkan tabel frekuensi', 'Konsistensi mengumpulkan tugas formatif'],
+      ['Menyelesaikan soal cerita perbandingan', 'Ketelitian dalam operasi bilangan pecahan'],
+    ];
+    for (const [i, studentId] of studentIds.slice(0, 3).entries()) {
+      await prisma.reportCard.create({
+        data: {
+          schoolId: school.id,
+          studentId,
+          termId: term.id,
+          classGroupId: classes['7A']!,
+          homeroomNote: i === 0 ? 'Aktif bertanya dan membantu teman. Pertahankan semangat belajar.' : null,
+          subjects: { create: { subjectId: subjects['MTK']!, highestAchievement: texts[i]![0], needsImprovement: texts[i]![1], updatedById: guruUser.id } },
+        },
+      });
+    }
+  }
+
   // Agenda akademik contoh (R2 E10): terbit, kecuali satu draf.
   if (!(await prisma.academicCalendarEvent.findFirst({ where: { schoolId: school.id } }))) {
     const base = todayIn(school.timezone);
