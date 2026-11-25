@@ -246,6 +246,42 @@ async function main() {
     });
   }
 
+  // Penilaian contoh Matematika 7A (R2 E13): dua terbit, satu draf.
+  const mtk7a = await prisma.teachingAssignment.findFirst({ where: { termId: term.id, classGroupId: classes['7A']!, subjectId: subjects['MTK']!, employeeId: guruId } });
+  const mtkScheme = await prisma.gradeSchemeVersion.findFirst({ where: { termId: term.id, subjectId: subjects['MTK']!, gradeLevelId: grades['7']!, status: 'PUBLISHED' }, include: { components: true } });
+  if (mtk7a && mtkScheme && !(await prisma.assessment.findFirst({ where: { teachingAssignmentId: mtk7a.id } }))) {
+    const comp = (code: string) => mtkScheme.components.find((c) => c.code === code)!.id;
+    const guruUser = await prisma.user.findUniqueOrThrow({ where: { email: 'guru@smartschool.test' } });
+    const sevenA = studentIds.slice(0, 3);
+    const plan: [string, string, number, 'PUBLISHED' | 'DRAFT', (number | 'MISSING' | null)[]][] = [
+      ['Tugas 1: persamaan linear', 'FORMATIF', -40, 'PUBLISHED', [85, 'MISSING', 78]],
+      ['Sumatif tengah semester', 'STS', -20, 'PUBLISHED', [80, 72, 90]],
+      ['Kuis 2: diagram batang', 'FORMATIF', -3, 'DRAFT', [88, null, 70]],
+    ];
+    for (const [title, code, offset, status, scores] of plan) {
+      await prisma.assessment.create({
+        data: {
+          schoolId: school.id,
+          teachingAssignmentId: mtk7a.id,
+          componentId: comp(code),
+          title,
+          assessedOn: d(addDays(todayIn(school.timezone), offset)),
+          status,
+          publishedAt: status === 'PUBLISHED' ? new Date() : null,
+          publishedById: status === 'PUBLISHED' ? guruUser.id : null,
+          createdById: guruUser.id,
+          entries: {
+            create: sevenA.flatMap((studentId, i) => {
+              const v = scores[i];
+              if (v === null || v === undefined) return [];
+              return [v === 'MISSING' ? { studentId, state: 'MISSING' as const, updatedById: guruUser.id } : { studentId, state: 'SCORED' as const, score: v, updatedById: guruUser.id }];
+            }),
+          },
+        },
+      });
+    }
+  }
+
   // Agenda akademik contoh (R2 E10): terbit, kecuali satu draf.
   if (!(await prisma.academicCalendarEvent.findFirst({ where: { schoolId: school.id } }))) {
     const base = todayIn(school.timezone);

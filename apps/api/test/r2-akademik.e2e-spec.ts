@@ -131,3 +131,93 @@ describe('R2 skema nilai & capaian (E11)', () => {
     expect(list.body).toEqual([expect.objectContaining({ code: 'CP-1', description: 'Menyelesaikan persamaan dan pertidaksamaan linear.' })]);
   });
 });
+
+describe('R2 penilaian & buku nilai (E13)', () => {
+  /** Rombel 7A dengan skema MTK terbit: FORMATIF 30, STS 30, SAS 40, KKTP 75. */
+  async function withScheme() {
+    const a = await setupClass(app, fx, s, '7A', [0, 2]);
+    const v = await a.cur
+      .post(api('/grade-schemes'))
+      .send({ termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId, passingScore: 75, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 30 }, { code: 'STS', name: 'Sumatif tengah', weight: 30 }, { code: 'SAS', name: 'Sumatif akhir', weight: 40 }] })
+      .expect(201);
+    await a.cur.post(api(`/grade-schemes/${v.body.id}/publish`)).expect(204);
+    return a;
+  }
+
+  it('guru mengisi dan menerbitkan nilai; nilai akhir dihitung dari penilaian terbit', async () => {
+    const a = await withScheme();
+    const teacher = await loginAs(app, fx.emails.teacher);
+    const mine = await teacher.get(api('/me/teaching-assignments')).expect(200);
+    expect(mine.body).toEqual([expect.objectContaining({ id: a.ta, hasScheme: true, assessments: 0 })]);
+
+    const gb0 = await teacher.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200);
+    expect(gb0.body).toMatchObject({ canEdit: true, assessments: [] });
+    expect(gb0.body.rows).toHaveLength(2);
+    const comp = Object.fromEntries(gb0.body.scheme.components.map((c: { code: string; id: string }) => [c.code, c.id]));
+
+    const mk = async (code: string, title: string) => (await teacher.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId: comp[code], title }).expect(201)).body.id as string;
+    const f1 = await mk('FORMATIF', 'Tugas 1');
+    const sts = await mk('STS', 'Sumatif tengah semester');
+    const sas = await mk('SAS', 'Sumatif akhir semester');
+    const [s0, s2] = [fx.studentIds[0]!, fx.studentIds[2]!];
+
+    await teacher.put(api(`/assessments/${f1}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 101 }] }).expect(422);
+    await teacher.put(api(`/assessments/${f1}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED' }] }).expect(422);
+    await teacher.put(api(`/assessments/${f1}/grades`)).send({ entries: [{ studentId: fx.studentIds[1], state: 'SCORED', score: 80 }] }).expect(422);
+    await teacher.put(api(`/assessments/${f1}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 80, feedback: 'Rapi' }, { studentId: s2, state: 'MISSING' }] }).expect(200);
+    await teacher.put(api(`/assessments/${sts}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 70 }] }).expect(200);
+    await teacher.put(api(`/assessments/${sas}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 90 }, { studentId: s2, state: 'EXCUSED' }] }).expect(200);
+
+    // Belum terbit → nilai akhir belum dihitung.
+    const gb1 = await teacher.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200);
+    expect(gb1.body.rows.find((r: { studentId: string }) => r.studentId === s0).final.complete).toBe(false);
+
+    for (const id of [f1, sts, sas]) await teacher.post(api(`/assessments/${id}/publish`)).expect(204);
+    await teacher.post(api(`/assessments/${f1}/publish`)).expect(409);
+    const gb2 = await teacher.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200);
+    const row0 = gb2.body.rows.find((r: { studentId: string }) => r.studentId === s0);
+    // 0.3*80 + 0.3*70 + 0.4*90 = 81
+    expect(row0.final).toMatchObject({ complete: true, raw: 81, rounded: 81, belowPassing: false });
+    expect(row0.cells[f1]).toMatchObject({ state: 'SCORED', score: 80, feedback: 'Rapi', versionNo: 1 });
+    const row2 = gb2.body.rows.find((r: { studentId: string }) => r.studentId === s2);
+    expect(row2.final).toMatchObject({ complete: false, rounded: null });
+    expect(row2.final.components.FORMATIF).toBe(0);
+    expect(row2.final.issues).toEqual(['1 nilai Sumatif tengah belum diisi.', 'Semua nilai Sumatif akhir tidak berlaku.']);
+    expect(gb2.body.assessments.find((x: { id: string }) => x.id === sts).counts).toMatchObject({ SCORED: 1, PENDING: 1 });
+
+    await teacher.delete(api(`/assessments/${sas}`)).expect(409);
+  });
+
+  it('hak akses, pemeriksaan versi, dan koreksi nilai terbit beralasan', async () => {
+    const a = await withScheme();
+    const teacher = await loginAs(app, fx.emails.teacher);
+    const gb = await teacher.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200);
+    const compId = gb.body.scheme.components[0].id;
+    const s0 = fx.studentIds[0]!;
+
+    const homeroom = await loginAs(app, s.homeroomEmail);
+    await homeroom.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId: compId, title: 'Bukan guru mapel' }).expect(403);
+    expect((await homeroom.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200)).body.canEdit).toBe(false);
+    const student = await loginAs(app, s.studentEmail);
+    await student.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(403);
+    expect((await a.cur.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200)).body.canEdit).toBe(false);
+
+    const id = (await teacher.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId: compId, title: 'Kuis 1' }).expect(201)).body.id;
+    await teacher.put(api(`/assessments/${id}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 60 }] }).expect(200);
+    // Dua tab: keduanya membuka versi 1; tab pertama menyimpan, tab kedua ditolak.
+    await teacher.put(api(`/assessments/${id}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 65, versionNo: 1 }] }).expect(200);
+    const stale = await teacher.put(api(`/assessments/${id}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 99, versionNo: 1 }] }).expect(409);
+    expect(stale.body.fieldErrors.entries).toEqual(['Siswa Satu']);
+
+    await teacher.post(api(`/assessments/${id}/publish`)).expect(204);
+    await teacher.put(api(`/assessments/${id}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 75, versionNo: 2 }] }).expect(422);
+    await teacher.put(api(`/assessments/${id}/grades`)).send({ reason: 'Salah input dari lembar jawaban', entries: [{ studentId: s0, state: 'SCORED', score: 75, versionNo: 2 }] }).expect(200);
+    // Hanya umpan balik yang berubah: tidak perlu alasan, tidak masuk riwayat nilai.
+    await teacher.put(api(`/assessments/${id}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 75, feedback: 'Sudah diperbaiki', versionNo: 3 }] }).expect(200);
+    const changes = await teacher.get(api(`/assessments/${id}/changes`)).expect(200);
+    expect(changes.body).toEqual([expect.objectContaining({ student: 'Siswa Satu', oldScore: 65, newScore: 75, reason: 'Salah input dari lembar jawaban' })]);
+    const admin = await loginAs(app, fx.emails.admin);
+    const audit = await admin.get(api(`/audit-events?entityType=assessment&entityId=${id}`)).expect(200);
+    expect(audit.body.items.map((x: { action: string }) => x.action)).toEqual(expect.arrayContaining(['assessment.create', 'grade.save', 'assessment.publish', 'grade.correct']));
+  });
+});

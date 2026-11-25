@@ -127,7 +127,10 @@ async function Content({ params, searchParams }: PageProps<"/academics/classes/[
             {ta.data.map((a) => (
               <li key={a.id} className="flex flex-wrap items-start gap-2 p-3 text-sm">
                 <span className="min-w-0 flex-1">
-                  <span className="font-medium">{a.subject.name}</span> · {a.employee.fullName}
+                  <Link href={`/teacher/grades/${a.id}`} className="font-medium hover:underline">
+                    {a.subject.name}
+                  </Link>{" "}
+                  · {a.employee.fullName}
                   <span className={`block text-xs ${a.scheduledSlots < a.weeklyPeriods ? "text-primary" : "text-muted-foreground"}`}>
                     {a.scheduledSlots} dari {a.weeklyPeriods} jam per minggu terjadwal
                   </span>

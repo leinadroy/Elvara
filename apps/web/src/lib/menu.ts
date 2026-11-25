@@ -31,6 +31,7 @@ const MENU: MenuDef[] = [
   { href: "/student/attendance", label: "Kehadiran saya", group: "Utama", icon: "attendance", roles: ["STUDENT"], keywords: "absensi" },
   { href: "/staff/schedule", label: "Jadwal tugas saya", group: "Utama", icon: "calendar", roles: ["STAFF", "TEACHER"], needsPerson: true, keywords: "shift piket tugas staf" },
   { href: "/teacher/attendance", label: "Absensi hari ini", group: "Kelas & absensi", icon: "attendance", permission: "attendance:take", keywords: "absen presensi kelas jadwal mengajar" },
+  { href: "/teacher/grades", label: "Buku nilai", group: "Kelas & absensi", icon: "chart", roles: ["TEACHER"], keywords: "nilai penilaian tugas ulangan sumatif formatif" },
   { href: "/teacher/attendance/corrections", label: "Koreksi absensi", group: "Kelas & absensi", icon: "inbox", anyPermission: ["attendance:take", "attendance:manage"], keywords: "koreksi wali kelas" },
   { href: "/academics/attendance-recap", label: "Rekap absensi", group: "Kelas & absensi", icon: "chart", anyPermission: ["attendance:read", "attendance:take"], keywords: "rekap persentase kehadiran" },
   { href: "/academics/calendar", label: "Kalender akademik", group: "Akademik", icon: "calendar", permission: "classes:read", keywords: "agenda ujian libur rapor semester" },
