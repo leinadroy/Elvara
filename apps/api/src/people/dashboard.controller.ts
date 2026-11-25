@@ -5,6 +5,7 @@ import type { AuthContext } from '../auth/auth.types.js';
 import { CurrentAuth } from '../auth/decorators.js';
 import { fromDbDate, todayIso } from '../common/dates.js';
 import { MetricsService } from '../academics/metrics.service.js';
+import { GradingMetricsService } from '../grading/grading-metrics.service.js';
 import { WorkShiftsService } from '../staff/work-shifts.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { GuardiansService } from './guardians.service.js';
@@ -20,6 +21,7 @@ export class DashboardController {
     private readonly guardians: GuardiansService,
     private readonly metrics: MetricsService,
     private readonly shifts: WorkShiftsService,
+    private readonly gradingMetrics: GradingMetricsService,
   ) {}
 
   @Get('summary')
@@ -113,6 +115,13 @@ export class DashboardController {
       metrics.push(...(await this.metrics.forRole(auth)));
     } catch (err) {
       this.logger.error('Angka beranda R1 gagal dihitung', err as Error);
+      out.metricsUnavailable = true;
+    }
+    // Angka R2 (penilaian dan rapor, E16), juga terpisah agar kegagalannya tidak menghapus angka lain.
+    try {
+      metrics.push(...(await this.gradingMetrics.forRole(auth)));
+    } catch (err) {
+      this.logger.error('Angka beranda R2 gagal dihitung', err as Error);
       out.metricsUnavailable = true;
     }
     out.metrics = metrics;

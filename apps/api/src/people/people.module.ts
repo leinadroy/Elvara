@@ -14,9 +14,10 @@ import { SearchController } from './search.controller.js';
 import { DashboardController } from './dashboard.controller.js';
 import { AcademicsModule } from '../academics/academics.module.js';
 import { StaffModule } from '../staff/staff.module.js';
+import { GradingModule } from '../grading/grading.module.js';
 
 @Module({
-  imports: [AcademicsModule, StaffModule],
+  imports: [AcademicsModule, StaffModule, GradingModule],
   controllers: [StudentsController, StudentGuardiansController, EmployeesController, GuardiansController, GuardianPortalController, MeController, SearchController, DashboardController],
   providers: [StudentsService, EmployeesService, GuardiansService],
   exports: [StudentsService],

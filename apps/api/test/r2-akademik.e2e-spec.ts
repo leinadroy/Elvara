@@ -479,3 +479,50 @@ describe('R2 rapor (E15)', () => {
     expect(sn.map((n: { title: string }) => n.title).sort()).toEqual([expect.stringMatching(/diperbarui$/), expect.stringMatching(/terbit$/)]);
   });
 });
+
+describe('R2 beranda (E16)', () => {
+  it('angka guru, wali kelas, kurikulum, dan pimpinan dengan definisi dan sumber', async () => {
+    const a = await setupClass(app, fx, s, '7A', [0, 2]);
+    await createUser(prisma, fx, 'Kepala Sekolah', 'kepsek@tes.test', 'MANAGEMENT', 'employee');
+    const v = await a.cur
+      .post(api('/grade-schemes'))
+      .send({ termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId, passingScore: 75, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 50 }, { code: 'SAS', name: 'Sumatif akhir', weight: 50 }] })
+      .expect(201);
+    await a.cur.post(api(`/grade-schemes/${v.body.id}/publish`)).expect(204);
+    const teacher = await loginAs(app, fx.emails.teacher);
+    const comps = (await teacher.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200)).body.scheme.components;
+    const me = fx.studentIds[2]!;
+    const act = await teacher
+      .post(api('/activities'))
+      .send({ teachingAssignmentId: a.ta, componentId: comps[0].id, title: 'Tugas 1', opensAt: new Date(Date.now() - 60_000).toISOString(), dueAt: new Date(Date.now() + 86_400_000).toISOString() })
+      .expect(201);
+    await teacher.post(api(`/activities/${act.body.id}/publish`)).expect(204);
+    await teacher.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId: comps[1].id, title: 'SAS' }).expect(201);
+    const student = await loginAs(app, s.studentEmail);
+    await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'beranda-1').field('text', 'Jawaban').expect(201);
+
+    const metric = async (agent: Awaited<ReturnType<typeof loginAs>>, key: string) => {
+      const body = (await agent.get(api('/dashboard/summary')).expect(200)).body;
+      expect(body.metricsUnavailable).toBeUndefined();
+      return body.metrics.find((m: { key: string }) => m.key === key);
+    };
+    expect(await metric(teacher, 'submissions_ungraded')).toMatchObject({ value: 1, href: '/teacher/assignments', definition: expect.any(String), source: expect.stringContaining('submission') });
+    expect(await metric(teacher, 'assessments_unpublished')).toMatchObject({ value: 2 });
+    expect(await metric(teacher, 'report_descriptions_missing')).toMatchObject({ value: 2, note: 'dari 2 siswa × mapel' });
+
+    const linked = (await teacher.get(api(`/activities/${act.body.id}`)).expect(200)).body.assessment.id;
+    await teacher.put(api(`/assessments/${linked}/grades`)).send({ entries: [{ studentId: me, state: 'SCORED', score: 80 }] }).expect(200);
+    await teacher.put(api('/report-cards/descriptions')).send({ teachingAssignmentId: a.ta, entries: [{ studentId: me, highestAchievement: 'Persamaan linear', needsImprovement: 'Diagram' }] }).expect(204);
+    expect(await metric(teacher, 'submissions_ungraded')).toMatchObject({ value: 0 });
+    expect(await metric(teacher, 'report_descriptions_missing')).toMatchObject({ value: 1 });
+
+    const homeroom = await loginAs(app, s.homeroomEmail);
+    expect(await metric(homeroom, 'report_cards_issues_7A')).toMatchObject({ value: 2, note: '0 siap diajukan · 0 diajukan · 0 terbit, dari 2 siswa', href: `/teacher/report-cards/${a.cls}` });
+    expect(await metric(a.cur, 'report_cards_published')).toMatchObject({ value: 0, note: 'dari 2 siswa · 0 menunggu persetujuan · 0 dikembalikan' });
+    expect(await metric(a.cur, 'report_cards_waiting')).toBeUndefined();
+    const head = await loginAs(app, 'kepsek@tes.test');
+    expect(await metric(head, 'report_cards_waiting')).toMatchObject({ value: 0, warn: true, href: '/academics/report-cards' });
+    expect(await metric(head, 'report_cards_published')).toBeUndefined();
+    expect(await metric(student, 'submissions_ungraded')).toBeUndefined();
+  });
+});

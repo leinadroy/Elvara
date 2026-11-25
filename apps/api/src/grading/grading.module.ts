@@ -5,6 +5,7 @@ import { DocumentsModule } from '../documents/documents.module.js';
 import { ActivitiesController } from './activities.controller.js';
 import { ActivitiesService } from './activities.service.js';
 import { GradebookService } from './gradebook.service.js';
+import { GradingMetricsService } from './grading-metrics.service.js';
 import { GradingController } from './grading.controller.js';
 import { PortalGradesService } from './portal-grades.service.js';
 import { ReportCardsController } from './report-cards.controller.js';
@@ -15,7 +16,7 @@ import { SchemesService } from './schemes.service.js';
 @Module({
   imports: [AcademicsModule, DocumentsModule, CommunicationsModule],
   controllers: [GradingController, ActivitiesController, ReportCardsController],
-  providers: [SchemesService, GradebookService, ActivitiesService, PortalGradesService, ReportCardsService],
-  exports: [SchemesService, GradebookService],
+  providers: [SchemesService, GradebookService, ActivitiesService, PortalGradesService, ReportCardsService, GradingMetricsService],
+  exports: [SchemesService, GradebookService, GradingMetricsService],
 })
 export class GradingModule {}

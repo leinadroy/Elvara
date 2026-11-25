@@ -77,7 +77,7 @@ export class ReportCardsService {
   private readonly termSelect = { id: true, name: true, startDate: true, endDate: true, academicYear: { select: { name: true } } } as const;
 
   /** Semester yang diminta, atau yang sedang berjalan, atau semester terakhir yang sudah dimulai di tahun ajaran aktif. */
-  private async term(schoolId: string, termId?: string): Promise<Term | null> {
+  async term(schoolId: string, termId?: string): Promise<Term | null> {
     if (termId) {
       const t = await this.prisma.term.findFirst({ where: { id: termId, academicYear: { schoolId } }, select: this.termSelect });
       if (!t) throw new NotFoundException('Semester tidak ditemukan.');
@@ -92,7 +92,7 @@ export class ReportCardsService {
   }
 
   /** Tanggal acuan penempatan: hari ini, dibatasi ke rentang semester. */
-  private refDate(term: Term, today: string) {
+  refDate(term: Term, today: string) {
     const start = fromDbDate(term.startDate);
     const end = fromDbDate(term.endDate);
     return today < start ? start : today > end ? end : today;
@@ -285,6 +285,22 @@ export class ReportCardsService {
         counts.DRAFT += Math.max(0, students - made);
         return { classGroup: c, homeroomTeacher: homerooms.find((h) => h.classGroupId === c.id)?.employee.person.fullName ?? null, students, counts };
       }),
+    };
+  }
+
+  /** Kelengkapan rapor satu rombel untuk beranda wali kelas (FR-16.2). */
+  async readiness(schoolId: string, classGroupId: string, term: Term) {
+    await this.ensureCards(schoolId, classGroupId, term);
+    const cards = await this.prisma.reportCard.findMany({ where: { termId: term.id, classGroupId }, select: { id: true, status: true } });
+    const editable = cards.filter((c) => EDITABLE.includes(c.status));
+    const built = await this.build(schoolId, classGroupId, term, editable.map((c) => c.id));
+    const withIssues = editable.filter((c) => built.get(c.id)?.issues.length).length;
+    return {
+      students: cards.length,
+      withIssues,
+      ready: editable.length - withIssues,
+      submitted: cards.filter((c) => c.status === 'SUBMITTED').length,
+      published: cards.filter((c) => c.status === 'PUBLISHED').length,
     };
   }
 
@@ -517,6 +533,8 @@ export class ReportCardsService {
   async saveDescriptions(auth: AuthContext, input: z.infer<typeof SaveReportDescriptionsSchema>, meta: RequestMeta) {
     const ta = await this.gradebook.loadAssignment(auth, input.teachingAssignmentId);
     await this.gradebook.requireTeacher(auth, ta);
+    // Rapor dibuat saat pertama dibutuhkan; simpan langsung (tanpa membuka halaman) juga harus berhasil.
+    await this.ensureCards(auth.schoolId, ta.classGroupId, await this.prisma.term.findUniqueOrThrow({ where: { id: ta.termId }, select: this.termSelect }));
     const cards = await this.prisma.reportCard.findMany({
       where: { termId: ta.termId, classGroupId: ta.classGroupId, studentId: { in: input.entries.map((e) => e.studentId) } },
       select: { id: true, studentId: true, status: true, student: { select: { person: { select: { fullName: true } } } } },
