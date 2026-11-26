@@ -1,36 +1,19 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Web Elvara
 
-## Getting Started
+Next.js App Router untuk tujuh area peran. API berada di `apps/api`; kontrak tipe dan validasi bersama ada di `packages/contracts`. Petunjuk setup lengkap ada di [README monorepo](../../README.md).
 
-First, run the development server:
+Salin `.env.example` ke `.env.local` dan atur `API_URL`, lalu jalankan dari root repo:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run dev:web
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Buka `http://localhost:3000/login`. Guru dapat membuat penilaian di `/teacher/assessments`, lalu mengisi nilai, menerbitkan, dan mengoreksi nilai terbit dengan alasan melalui `/teacher/assessments/[assessmentId]`. Nilai terbit tampil bagi siswa di `/student/grades` dan wali berizin di `/guardian/grades`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run typecheck -w web
+npm run lint -w web
+npm run build -w web
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Jika Turbopack gagal membuat subprocess pada lingkungan Windows tertentu, verifikasi build dengan `npm exec -w web -- next build --webpack`.

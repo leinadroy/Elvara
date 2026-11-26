@@ -1,34 +1,47 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post, Put, Query, Req } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
-import {
-  AssessmentSchema,
-  GradebookQuerySchema,
-  GradeSchemeQuerySchema,
-  GradeSchemeSchema,
-  LearningOutcomeQuerySchema,
-  LearningOutcomeSchema,
-  PortalGradesQuerySchema,
-  SaveGradesSchema,
-  UpdateGradeSchemeSchema,
-  UuidParamSchema,
-} from '@smart-school/contracts';
+import { AssessmentQuerySchema, GradeSchemeQuerySchema, GradeSchemeSchema, LearningOutcomeQuerySchema, LearningOutcomeSchema, UpdateGradeSchemeSchema, UuidParamSchema } from '@smart-school/contracts';
 import type { z } from 'zod';
 import type { AuthContext } from '../auth/auth.types.js';
 import { CurrentAuth, RequirePermissions } from '../auth/decorators.js';
 import { requestMeta } from '../common/request-meta.js';
-import { GradebookService } from './gradebook.service.js';
-import { PortalGradesService } from './portal-grades.service.js';
 import { SchemesService } from './schemes.service.js';
+import { AssessmentsService } from './assessments.service.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 
 @ApiTags('Penilaian')
 @Controller()
 export class GradingController {
-  constructor(
-    private readonly schemes: SchemesService,
-    private readonly gradebooks: GradebookService,
-    private readonly portal: PortalGradesService,
-  ) {}
+  constructor(private readonly schemes: SchemesService, private readonly assessments: AssessmentsService, private readonly prisma: PrismaService) {}
+
+  @Get('grade-recap/options')
+  @RequirePermissions('grading:read')
+  async recapOptions(@CurrentAuth() auth: AuthContext) {
+    const assignments = await this.prisma.teachingAssignment.findMany({
+      where: { schoolId: auth.schoolId },
+      select: {
+        id: true, classGroup: { select: { code: true } }, subject: { select: { name: true } },
+        term: { select: { name: true, academicYear: { select: { name: true } } } },
+        employee: { select: { person: { select: { fullName: true } } } },
+      },
+      orderBy: [{ term: { startDate: 'desc' } }, { classGroup: { code: 'asc' } }, { subject: { name: 'asc' } }, { id: 'asc' }],
+    });
+    return assignments.map(({ id, classGroup, subject, term, employee }) => ({
+      id, label: `${classGroup.code} · ${subject.name} · ${employee.person.fullName} · ${term.name} · ${term.academicYear.name}`,
+    }));
+  }
+
+  @Get('grade-recap')
+  @RequirePermissions('grading:read')
+  async recap(@CurrentAuth() auth: AuthContext, @Query({ schema: AssessmentQuerySchema }) query: z.infer<typeof AssessmentQuerySchema>) {
+    const assignment = await this.prisma.teachingAssignment.findFirst({
+      where: { schoolId: auth.schoolId, id: query.teachingAssignmentId },
+      select: { id: true },
+    });
+    if (!assignment) throw new NotFoundException('Penugasan mengajar tidak ditemukan.');
+    return this.assessments.aggregateForAssignment(auth.schoolId, assignment.id);
+  }
 
   @Get('grade-schemes')
   @RequirePermissions('grading:read')
@@ -85,50 +98,5 @@ export class GradingController {
   @RequirePermissions('grading:manage')
   updateOutcome(@CurrentAuth() auth: AuthContext, @Param('id', { schema: UuidParamSchema }) id: string, @Body({ schema: LearningOutcomeSchema }) body: z.infer<typeof LearningOutcomeSchema>, @Req() req: Request) {
     return this.schemes.saveOutcome(auth, id, body, requestMeta(req));
-  }
-
-  // ───────────── Penilaian dan buku nilai (E13). Akses rinci (guru penugasan, wali kelas) diperiksa di service. ─────────────
-
-  /** Nilai terbit untuk siswa, atau anak bagi wali (izin akademik). */
-  @Get('me/grades')
-  myGrades(@CurrentAuth() auth: AuthContext, @Query({ schema: PortalGradesQuerySchema }) q: z.infer<typeof PortalGradesQuerySchema>) {
-    return this.portal.portal(auth, q);
-  }
-
-  @Get('me/teaching-assignments')
-  myAssignments(@CurrentAuth() auth: AuthContext) {
-    return this.gradebooks.mine(auth);
-  }
-
-  @Get('gradebook')
-  gradebook(@CurrentAuth() auth: AuthContext, @Query({ schema: GradebookQuerySchema }) q: z.infer<typeof GradebookQuerySchema>) {
-    return this.gradebooks.gradebook(auth, q.teachingAssignmentId);
-  }
-
-  @Post('assessments')
-  createAssessment(@CurrentAuth() auth: AuthContext, @Body({ schema: AssessmentSchema }) body: z.infer<typeof AssessmentSchema>, @Req() req: Request) {
-    return this.gradebooks.createAssessment(auth, body, requestMeta(req));
-  }
-
-  @Delete('assessments/:id')
-  @HttpCode(204)
-  deleteAssessment(@CurrentAuth() auth: AuthContext, @Param('id', { schema: UuidParamSchema }) id: string, @Req() req: Request) {
-    return this.gradebooks.deleteAssessment(auth, id, requestMeta(req));
-  }
-
-  @Put('assessments/:id/grades')
-  saveGrades(@CurrentAuth() auth: AuthContext, @Param('id', { schema: UuidParamSchema }) id: string, @Body({ schema: SaveGradesSchema }) body: z.infer<typeof SaveGradesSchema>, @Req() req: Request) {
-    return this.gradebooks.saveGrades(auth, id, body, requestMeta(req));
-  }
-
-  @Post('assessments/:id/publish')
-  @HttpCode(204)
-  publishAssessment(@CurrentAuth() auth: AuthContext, @Param('id', { schema: UuidParamSchema }) id: string, @Req() req: Request) {
-    return this.gradebooks.publish(auth, id, requestMeta(req));
-  }
-
-  @Get('assessments/:id/changes')
-  changes(@CurrentAuth() auth: AuthContext, @Param('id', { schema: UuidParamSchema }) id: string) {
-    return this.gradebooks.changes(auth, id);
   }
 }

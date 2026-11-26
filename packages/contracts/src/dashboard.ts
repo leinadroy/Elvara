@@ -40,9 +40,9 @@ export interface DashboardSummary {
   pendingMyCorrection?: boolean;
   myDocumentCount?: number;
   mfa?: { enabled: boolean; recommended: boolean };
-  /** Angka R1 (FR-8.1–8.7) dan R2 (E16) sesuai peran aktif. */
+  /** Angka R1 sesuai peran aktif (FR-8.1–8.7). */
   metrics?: DashboardMetric[];
-  /** true bila sebagian angka akademik gagal dihitung; angka lain tetap dikirim. */
+  /** true bila angka R1 gagal dihitung; angka lain tetap dikirim. */
   metricsUnavailable?: boolean;
   /** Waktu ringkasan dihitung (ISO). */
   generatedAt: string;

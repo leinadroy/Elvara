@@ -42,6 +42,12 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const res = ctx.getResponse<Response>();
     const requestId = String(req.headers[REQUEST_ID_HEADER] ?? 'unknown');
 
+    if (exception instanceof Prisma.PrismaClientKnownRequestError && exception.code === 'P2034') {
+      const body: ApiError = { code: 'CONFLICT', message: 'Data berubah saat diproses. Muat ulang lalu coba lagi.', requestId };
+      res.status(HttpStatus.CONFLICT).json(body);
+      return;
+    }
+
     // Pelanggaran unique constraint yang lolos dari pemeriksaan service (mis. race condition).
     if (exception instanceof Prisma.PrismaClientKnownRequestError && exception.code === 'P2002') {
       const body: ApiError = { code: 'CONFLICT', message: 'Data dengan nilai unik yang sama sudah ada.', requestId };

@@ -15,19 +15,19 @@ scripts/               Generator catatan induk dan infografis (Python)
 
 ## Prasyarat
 
-- Node.js 22 atau lebih baru
+- Node.js 22.22.3+, 24.15.0+, atau 26+ (sesuai kebutuhan dependensi saat ini)
 - **npm 11** (npm 10 bawaan Node 22 gagal resolve dependency workspace ini). Jalankan perintah lewat `npx npm@11 …`, atau pasang sekali dengan `npm install -g npm@11`.
-- **Tidak perlu Docker.** PostgreSQL lokal dijalankan oleh `prisma dev` (ikut terpasang lewat `npm install`).
+- **Tidak perlu Docker untuk development.** `prisma dev` menjalankan database lokal berbasis PGlite yang kompatibel dengan protokol PostgreSQL. Untuk pilot/produksi, gunakan server PostgreSQL sungguhan.
 
 ## Menjalankan
 
 ```bash
-npm install
-npm run db:up                       # 2 server PostgreSQL lokal: smart-school (dev) & smart-school-test (tes), tanpa Docker
+npm ci
+npm run db:up                       # 2 database PGlite lokal terpisah: smart-school (dev) & smart-school-test (tes)
 cp apps/api/.env.example apps/api/.env      # cocokkan URL dengan yang ditampilkan db:up
 cp apps/web/.env.example apps/web/.env.local
 npm run db:deploy -w api            # terapkan migrasi
-npm run db:seed                     # data contoh sintetis; akun contoh tercantum di apps/api/prisma/seed.ts
+npm run db:seed                     # generate Prisma Client lalu isi data contoh sintetis
 npm run dev                         # contracts (watch) + API :4000 + web :3000
 ```
 

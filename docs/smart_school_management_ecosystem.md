@@ -2,6 +2,8 @@
 
 [Baca catatan induk lengkap dan rekomendasi topologi](smart_school_master_note.md).
 
+[Buka peta pra-desain Elvara: aplikasi, dashboard, topologi, dan tabel](architecture_blueprint/README.md).
+
 ## Integrated School Management Platform
 
 Platform terpadu untuk mengelola operasional sekolah dengan dua gedung,

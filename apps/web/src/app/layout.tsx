@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist_Mono } from "next/font/google";
 import { PREFERENCES_SCRIPT } from "@/lib/themes";
+import { UiInspection } from "@/components/ui-inspection";
 import "./globals.css";
 
 const geistMono = Geist_Mono({
@@ -23,7 +24,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {/* Tema & status sidebar diterapkan sebelum halaman tampil (tanpa kedipan). */}
         <script dangerouslySetInnerHTML={{ __html: PREFERENCES_SCRIPT }} />
       </head>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">{children}<UiInspection /></body>
     </html>
   );
 }

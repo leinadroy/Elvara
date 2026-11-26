@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { RECORD_STATUSES, type RecordStatus } from './academics.js';
+import { isoDate } from './common.js';
 
 // Skema nilai dan capaian pembelajaran (PRD R2 E11, ADR 0005). Skema per mapel × tingkat × semester,
 // ditetapkan kurikulum; terbit tidak diubah, perubahan = versi baru.
@@ -92,123 +93,181 @@ export interface LearningOutcomeView {
   status: RecordStatus;
 }
 
-// ───────────── Penilaian dan buku nilai (PRD R2 E13) ─────────────
+/** Penilaian langsung oleh guru pada satu penugasan mengajar (R2 E13 tahap awal). */
+export const AssessmentQuerySchema = z.object({ teachingAssignmentId: z.uuid() });
 
-export const GRADE_STATES = ['PENDING', 'SCORED', 'MISSING', 'EXCUSED'] as const;
-export type GradeState = (typeof GRADE_STATES)[number];
-export const GRADE_STATE_LABELS: Record<GradeState, string> = {
-  PENDING: 'Belum dinilai',
-  SCORED: 'Dinilai',
-  MISSING: 'Tidak mengumpulkan (0)',
-  EXCUSED: 'Tidak berlaku',
-};
-
-export const AssessmentSchema = z.object({
-  teachingAssignmentId: z.uuid(),
-  componentId: z.uuid({ error: 'Pilih komponen.' }),
+export const CreateAssessmentSchema = z.object({
+  teachingAssignmentId: z.uuid({ error: 'Pilih kelas yang diajar.' }),
+  componentId: z.uuid({ error: 'Pilih komponen nilai.' }),
   title: z.string().trim().min(3, { error: 'Judul minimal 3 karakter.' }).max(120),
-  assessedOn: z.iso.date({ error: 'Tanggal tidak valid.' }).optional().nullable(),
+  assessedOn: isoDate.optional(),
 });
 
-export const GradeEntryInputSchema = z
-  .object({
-    studentId: z.uuid(),
-    state: z.enum(GRADE_STATES),
-    score: z.coerce.number().min(0, { error: 'Nilai minimal 0.' }).max(100, { error: 'Nilai maksimal 100.' }).optional().nullable(),
-    feedback: z.string().trim().max(500).optional().nullable(),
-    /** Versi yang dilihat saat mengedit; berbeda dengan versi tersimpan → 409 (FR-13.5). Kosong untuk nilai baru. */
-    versionNo: z.number().int().positive().optional().nullable(),
-  })
-  .refine((v) => (v.state === 'SCORED') === (v.score !== undefined && v.score !== null), { path: ['score'], message: 'Isi nilai hanya untuk keadaan "Dinilai".' });
-
-export const SaveGradesSchema = z.object({
-  entries: z.array(GradeEntryInputSchema).min(1).max(200),
-  /** Wajib bila penilaian sudah terbit (FR-13.4). */
-  reason: z.string().trim().min(5, { error: 'Jelaskan alasan perubahan nilai terbit.' }).max(300).optional().nullable(),
+export const CreateActivitySchema = CreateAssessmentSchema.extend({
+  kind: z.enum(['ASSIGNMENT', 'QUIZ', 'EXAM', 'PRACTICE']),
+  instructions: z.string().trim().max(10000),
+  opensAt: z.iso.datetime({ offset: true }),
+  dueAt: z.iso.datetime({ offset: true }),
+  allowLate: z.boolean().default(false),
+  allowResubmit: z.boolean().default(true),
+  acceptsSubmissions: z.boolean().default(true),
+}).refine((input) => Date.parse(input.opensAt) < Date.parse(input.dueAt), {
+  path: ['dueAt'], message: 'Tenggat harus setelah waktu buka.',
 });
 
-export const GradebookQuerySchema = z.object({ teachingAssignmentId: z.uuid() });
+export const ActivityStatusSchema = z.object({ status: z.enum(['PUBLISHED', 'CLOSED', 'CANCELLED']) });
+export const SubmitActivitySchema = z.object({ text: z.string().trim().max(20000).optional(), idempotencyKey: z.uuid() });
+
+export interface PortalActivity {
+  id: string;
+  title: string;
+  instructions: string;
+  dueAt: string;
+  status: 'PUBLISHED' | 'CLOSED';
+  canSubmit: boolean;
+  acceptsSubmissions: boolean;
+  teachingAssignment: { subject: { name: string } };
+  submissions: { status: 'ON_TIME' | 'LATE'; submittedAt: string; latestVersionNo: number }[];
+}
 
 export interface AssessmentView {
   id: string;
+  teachingAssignmentId: string;
   title: string;
-  component: { id: string; code: string; name: string; weight: number };
   assessedOn: string | null;
   status: 'DRAFT' | 'PUBLISHED';
-  publishedAt: string | null;
-  /** Kegiatan (tugas) sumber penilaian ini, bila ada. */
-  activityId: string | null;
-  /** Ringkasan keadaan nilai pada penilaian ini. */
-  counts: Record<GradeState, number>;
+  component: { id: string; code: string; name: string; schemeVersionNo: number };
+  createdAt: string;
 }
 
-export interface GradeCell {
+/** Kelas yang diajar guru aktif dan komponen nilai dari skema terbit. */
+export interface TeacherAssessmentOption {
+  teachingAssignmentId: string;
+  classCode: string;
+  subjectName: string;
+  termName: string;
+  components: { id: string; code: string; name: string }[];
+}
+
+/** Nilai per siswa pada satu penilaian. Versi 0 berarti belum ada baris grade_entry. */
+export const GradeEntrySaveSchema = z.object({
+  state: z.enum(['PENDING', 'SCORED', 'MISSING', 'EXCUSED']),
+  score: z.number().min(0).max(100).nullable(),
+  feedback: z.string().trim().max(1000).nullable(),
+  versionNo: z.number().int().min(0),
+}).superRefine((value, ctx) => {
+  if (value.state === 'SCORED' && value.score === null) {
+    ctx.addIssue({ code: 'custom', path: ['score'], message: 'Isi nilai untuk keadaan Dinilai.' });
+  }
+  if (value.state !== 'SCORED' && value.score !== null) {
+    ctx.addIssue({ code: 'custom', path: ['score'], message: 'Nilai angka hanya untuk keadaan Dinilai.' });
+  }
+  if (value.score !== null && Math.abs(value.score * 10 - Math.round(value.score * 10)) > 1e-8) {
+    ctx.addIssue({ code: 'custom', path: ['score'], message: 'Nilai maksimal satu angka desimal.' });
+  }
+});
+
+export type GradeState = 'PENDING' | 'SCORED' | 'MISSING' | 'EXCUSED';
+export const GRADE_STATE_LABELS: Record<GradeState, string> = {
+  PENDING: 'Belum dinilai', SCORED: 'Dinilai', MISSING: 'Tidak mengumpulkan', EXCUSED: 'Tidak berlaku',
+};
+
+export interface AssessmentGradeRow {
+  studentId: string;
+  nis: string;
+  fullName: string;
   state: GradeState;
   score: number | null;
   feedback: string | null;
   versionNo: number;
 }
 
-/** Hasil perhitungan backend (aturan skema berversi). Nilai kosong tidak pernah dianggap nol. */
-export interface FinalGrade {
-  /** Rata-rata per kode komponen; null bila belum ada nilai yang dihitung. */
-  components: Record<string, number | null>;
-  /** Nilai akhir sebelum dibulatkan; null bila belum lengkap. */
-  raw: number | null;
-  /** Dibulatkan sekali ke bilangan bulat (setengah ke atas). */
-  rounded: number | null;
-  complete: boolean;
-  /** Penyebab belum lengkap, dalam kalimat. */
-  issues: string[];
-  /** Di bawah KKTP (bila skema punya KKTP). */
-  belowPassing: boolean;
+export interface AssessmentGradeSheet {
+  assessment: AssessmentView;
+  rosterDate: string;
+  students: AssessmentGradeRow[];
 }
 
-export interface GradebookRow {
-  studentId: string;
-  fullName: string;
-  nis: string;
-  cells: Record<string, GradeCell>;
-  final: FinalGrade;
+export interface AssignmentGradeBook {
+  assessments: Pick<AssessmentView, 'id' | 'title' | 'status'>[];
+  students: {
+    studentId: string;
+    fullName: string;
+    nis: string;
+    cells: Record<string, { state: GradeState; score: number | null; feedback: string | null }>;
+  }[];
 }
 
-export interface Gradebook {
-  assignment: { id: string; subject: { id: string; code: string; name: string }; classGroup: { id: string; code: string }; term: { id: string; name: string }; teacher: string };
-  scheme: GradeSchemeView | null;
-  assessments: AssessmentView[];
-  rows: GradebookRow[];
-  /** Guru penugasan boleh mengubah; pembaca (kurikulum/pimpinan/wali kelas) hanya melihat. */
-  canEdit: boolean;
+export type GradeAggregateStatus = 'COMPLETE' | 'INCOMPLETE' | 'EXCUSED';
+
+export interface GradeAggregateVersion {
+  schemeVersionId: string;
+  versionNo: number;
+  passingScore: number | null;
+  students: {
+    studentId: string;
+    fullName: string;
+    nis: string;
+    components: { id: string; name: string; weight: number; average: number | null; status: GradeAggregateStatus }[];
+    finalScore: number | null;
+    status: GradeAggregateStatus;
+    needsFollowUp: boolean | null;
+  }[];
 }
 
-/** Penugasan mengajar guru yang sedang masuk, untuk daftar buku nilai. */
-export interface MyTeachingAssignment {
+export const BulkGradeSaveSchema = z.object({
+  rows: z.array(GradeEntrySaveSchema.safeExtend({ studentId: z.uuid() })).min(1).max(100),
+}).superRefine(({ rows }, ctx) => {
+  const seen = new Set<string>();
+  rows.forEach((row, index) => {
+    if (seen.has(row.studentId)) ctx.addIssue({ code: 'custom', path: ['rows', index, 'studentId'], message: 'Siswa muncul lebih dari sekali.' });
+    seen.add(row.studentId);
+  });
+});
+
+export const PublishedGradeCorrectionSchema = GradeEntrySaveSchema.safeExtend({
+  state: z.enum(['SCORED', 'MISSING', 'EXCUSED']),
+  reason: z.string().trim().min(10, { error: 'Alasan koreksi minimal 10 karakter.' }).max(500),
+});
+
+export interface PublishedGradeChange {
   id: string;
-  subject: { id: string; code: string; name: string };
-  classGroup: { id: string; code: string };
-  term: { id: string; name: string };
-  hasScheme: boolean;
-  assessments: number;
-  unpublished: number;
+  oldState: GradeState;
+  oldScore: number | null;
+  newState: GradeState;
+  newScore: number | null;
+  reason: string;
+  actorName: string;
+  createdAt: string;
 }
 
-// ───────────── Nilai di portal siswa dan wali (PRD R2 E14) ─────────────
+/** Hanya nilai dari penilaian terbit yang boleh terlihat pada portal siswa/wali. */
+export const PortalGradesQuerySchema = z.object({ studentId: z.uuid().optional() });
 
-export const PortalGradesQuerySchema = z.object({ studentId: z.uuid().optional(), termId: z.uuid().optional() });
-
-/** Nilai satu mapel untuk siswa: hanya penilaian terbit; nilai akhir dihitung dengan aturan yang sama dengan buku nilai. */
-export interface PortalSubjectGrades {
-  teachingAssignmentId: string;
-  subject: { id: string; code: string; name: string };
-  teacher: string;
-  scheme: { versionNo: number; components: { code: string; name: string; weight: number }[]; passingScore: number | null } | null;
-  assessments: { id: string; title: string; component: { code: string; name: string }; assessedOn: string | null; publishedAt: string | null; cell: GradeCell | null }[];
-  final: FinalGrade;
+export interface PortalGradeItem {
+  assessmentId: string;
+  title: string;
+  assessedOn: string;
+  publishedAt: string;
+  subject: string;
+  classCode: string;
+  component: string;
+  state: GradeState;
+  score: number | null;
+  feedback: string | null;
 }
 
-export interface PortalGrades {
-  student: { id: string; fullName: string };
-  term: { id: string; name: string } | null;
-  classGroup: { id: string; code: string } | null;
-  subjects: PortalSubjectGrades[];
+export interface PortalGradesView {
+  studentId: string;
+  items: PortalGradeItem[];
+  summaries: {
+    key: string;
+    subject: string;
+    classCode: string;
+    term: string;
+    academicYear: string;
+    versionNo: number;
+    finalScore: number | null;
+    status: GradeAggregateStatus;
+  }[];
 }

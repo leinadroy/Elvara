@@ -8,12 +8,13 @@ export type ClientResult<T> = { ok: true; data: T } | { ok: false; status: numbe
  */
 export async function apiSend<T = unknown>(method: "POST" | "PATCH" | "PUT" | "DELETE", path: string, body?: unknown): Promise<ClientResult<T>> {
   let res: Response;
+  const multipart = body instanceof FormData;
   try {
     res = await fetch(`/api/v1${path}`, {
       method,
       credentials: "same-origin",
-      headers: body === undefined ? undefined : { "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: body === undefined || multipart ? undefined : { "content-type": "application/json" },
+      body: body === undefined ? undefined : multipart ? body : JSON.stringify(body),
     });
   } catch {
     return { ok: false, status: 0, error: { code: "NETWORK", message: "Koneksi terputus. Periksa jaringan lalu coba lagi.", requestId: "-" } };

@@ -7,6 +7,7 @@ import { Chip, LoadingBlock, PageHeader } from "@/components/page-states";
 import { apiGet, getMe } from "@/lib/api-server";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { RoleWidgets } from "./r1-widgets";
+import { R2Widgets } from "./r2-widgets";
 import { StaleNotice } from "./stale-notice";
 
 /** Kartu widget bergaya infografis: garis warna modul di atas, judul kecil kapital. */
@@ -183,6 +184,7 @@ function Widgets({ me, s }: { me: Me; s: DashboardSummary }) {
         )}
 
         <RoleWidgets me={me} s={s} />
+        <Suspense fallback={<LoadingBlock rows={3} />}><R2Widgets me={me} summary={s} /></Suspense>
 
         {me.person && (
           <Card title="Data saya">

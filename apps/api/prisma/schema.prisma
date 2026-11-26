@@ -1392,26 +1392,24 @@ enum ReportCardStatus {
 
 /// Rapor per siswa per semester. Nilai dihitung langsung sampai terbit; terbit = snapshot tidak berubah.
 model ReportCard {
-  id                    String           @id @default(uuid()) @db.Uuid
-  schoolId              String           @db.Uuid
-  studentId             String           @db.Uuid
-  student               Student          @relation(fields: [studentId], references: [id])
-  termId                String           @db.Uuid
-  term                  Term             @relation(fields: [termId], references: [id])
-  classGroupId          String           @db.Uuid
-  classGroup            ClassGroup       @relation(fields: [classGroupId], references: [id])
-  status                ReportCardStatus @default(DRAFT)
-  homeroomNote          String?
-  submittedAt           DateTime?
-  submittedById         String?          @db.Uuid
-  decidedAt             DateTime?
-  decidedById           String?          @db.Uuid
-  returnNote            String?
-  /// Alasan revisi setelah terbit; dipakai sebagai alasan versi berikutnya saat disetujui.
-  pendingRevisionReason String?
-  currentVersionNo      Int              @default(0)
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @updatedAt
+  id               String           @id @default(uuid()) @db.Uuid
+  schoolId         String           @db.Uuid
+  studentId        String           @db.Uuid
+  student          Student          @relation(fields: [studentId], references: [id])
+  termId           String           @db.Uuid
+  term             Term             @relation(fields: [termId], references: [id])
+  classGroupId     String           @db.Uuid
+  classGroup       ClassGroup       @relation(fields: [classGroupId], references: [id])
+  status           ReportCardStatus @default(DRAFT)
+  homeroomNote     String?
+  submittedAt      DateTime?
+  submittedById    String?          @db.Uuid
+  decidedAt        DateTime?
+  decidedById      String?          @db.Uuid
+  returnNote       String?
+  currentVersionNo Int              @default(0)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   subjects ReportCardSubject[]
   versions ReportCardVersion[]

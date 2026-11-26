@@ -3,7 +3,7 @@ import type { App } from 'supertest/types.js';
 import { addDays } from '../src/common/school-time.js';
 import type { PrismaClient } from '../src/generated/prisma/client.js';
 import { createApp, createPrisma, loginAs, resetDb, seedFixture, type Fixture } from './helpers.js';
-import { api, createUser, seedSchool, setupClass, today, type School } from './school-fixture.js';
+import { api, seedSchool, setupClass, today, type School } from './school-fixture.js';
 
 // Alur R2 memanggil banyak endpoint; PGlite (satu koneksi) lambat bila seluruh suite berjalan.
 vi.setConfig({ testTimeout: 120_000 });
@@ -132,397 +132,325 @@ describe('R2 skema nilai & capaian (E11)', () => {
   });
 });
 
-describe('R2 penilaian & buku nilai (E13)', () => {
-  /** Rombel 7A dengan skema MTK terbit: FORMATIF 30, STS 30, SAS 40, KKTP 75. */
-  async function withScheme() {
-    const a = await setupClass(app, fx, s, '7A', [0, 2]);
-    const v = await a.cur
-      .post(api('/grade-schemes'))
-      .send({ termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId, passingScore: 75, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 30 }, { code: 'STS', name: 'Sumatif tengah', weight: 30 }, { code: 'SAS', name: 'Sumatif akhir', weight: 40 }] })
-      .expect(201);
-    await a.cur.post(api(`/grade-schemes/${v.body.id}/publish`)).expect(204);
-    return a;
-  }
-
-  it('guru mengisi dan menerbitkan nilai; nilai akhir dihitung dari penilaian terbit', async () => {
-    const a = await withScheme();
-    const teacher = await loginAs(app, fx.emails.teacher);
-    const mine = await teacher.get(api('/me/teaching-assignments')).expect(200);
-    expect(mine.body).toEqual([expect.objectContaining({ id: a.ta, hasScheme: true, assessments: 0 })]);
-
-    const gb0 = await teacher.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200);
-    expect(gb0.body).toMatchObject({ canEdit: true, assessments: [] });
-    expect(gb0.body.rows).toHaveLength(2);
-    const comp = Object.fromEntries(gb0.body.scheme.components.map((c: { code: string; id: string }) => [c.code, c.id]));
-
-    const mk = async (code: string, title: string) => (await teacher.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId: comp[code], title }).expect(201)).body.id as string;
-    const f1 = await mk('FORMATIF', 'Tugas 1');
-    const sts = await mk('STS', 'Sumatif tengah semester');
-    const sas = await mk('SAS', 'Sumatif akhir semester');
-    const [s0, s2] = [fx.studentIds[0]!, fx.studentIds[2]!];
-
-    await teacher.put(api(`/assessments/${f1}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 101 }] }).expect(422);
-    await teacher.put(api(`/assessments/${f1}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED' }] }).expect(422);
-    await teacher.put(api(`/assessments/${f1}/grades`)).send({ entries: [{ studentId: fx.studentIds[1], state: 'SCORED', score: 80 }] }).expect(422);
-    await teacher.put(api(`/assessments/${f1}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 80, feedback: 'Rapi' }, { studentId: s2, state: 'MISSING' }] }).expect(200);
-    await teacher.put(api(`/assessments/${sts}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 70 }] }).expect(200);
-    await teacher.put(api(`/assessments/${sas}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 90 }, { studentId: s2, state: 'EXCUSED' }] }).expect(200);
-
-    // Belum terbit → nilai akhir belum dihitung.
-    const gb1 = await teacher.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200);
-    expect(gb1.body.rows.find((r: { studentId: string }) => r.studentId === s0).final.complete).toBe(false);
-
-    for (const id of [f1, sts, sas]) await teacher.post(api(`/assessments/${id}/publish`)).expect(204);
-    await teacher.post(api(`/assessments/${f1}/publish`)).expect(409);
-    const gb2 = await teacher.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200);
-    const row0 = gb2.body.rows.find((r: { studentId: string }) => r.studentId === s0);
-    // 0.3*80 + 0.3*70 + 0.4*90 = 81
-    expect(row0.final).toMatchObject({ complete: true, raw: 81, rounded: 81, belowPassing: false });
-    expect(row0.cells[f1]).toMatchObject({ state: 'SCORED', score: 80, feedback: 'Rapi', versionNo: 1 });
-    const row2 = gb2.body.rows.find((r: { studentId: string }) => r.studentId === s2);
-    expect(row2.final).toMatchObject({ complete: false, rounded: null });
-    expect(row2.final.components.FORMATIF).toBe(0);
-    expect(row2.final.issues).toEqual(['1 nilai Sumatif tengah belum diisi.', 'Semua nilai Sumatif akhir tidak berlaku.']);
-    expect(gb2.body.assessments.find((x: { id: string }) => x.id === sts).counts).toMatchObject({ SCORED: 1, PENDING: 1 });
-
-    await teacher.delete(api(`/assessments/${sas}`)).expect(409);
-  });
-
-  it('hak akses, pemeriksaan versi, dan koreksi nilai terbit beralasan', async () => {
-    const a = await withScheme();
-    const teacher = await loginAs(app, fx.emails.teacher);
-    const gb = await teacher.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200);
-    const compId = gb.body.scheme.components[0].id;
-    const s0 = fx.studentIds[0]!;
-
-    const homeroom = await loginAs(app, s.homeroomEmail);
-    await homeroom.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId: compId, title: 'Bukan guru mapel' }).expect(403);
-    expect((await homeroom.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200)).body.canEdit).toBe(false);
-    const student = await loginAs(app, s.studentEmail);
-    await student.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(403);
-    expect((await a.cur.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200)).body.canEdit).toBe(false);
-
-    const id = (await teacher.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId: compId, title: 'Kuis 1' }).expect(201)).body.id;
-    await teacher.put(api(`/assessments/${id}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 60 }] }).expect(200);
-    // Dua tab: keduanya membuka versi 1; tab pertama menyimpan, tab kedua ditolak.
-    await teacher.put(api(`/assessments/${id}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 65, versionNo: 1 }] }).expect(200);
-    const stale = await teacher.put(api(`/assessments/${id}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 99, versionNo: 1 }] }).expect(409);
-    expect(stale.body.fieldErrors.entries).toEqual(['Siswa Satu']);
-
-    await teacher.post(api(`/assessments/${id}/publish`)).expect(204);
-    await teacher.put(api(`/assessments/${id}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 75, versionNo: 2 }] }).expect(422);
-    await teacher.put(api(`/assessments/${id}/grades`)).send({ reason: 'Salah input dari lembar jawaban', entries: [{ studentId: s0, state: 'SCORED', score: 75, versionNo: 2 }] }).expect(200);
-    // Hanya umpan balik yang berubah: tidak perlu alasan, tidak masuk riwayat nilai.
-    await teacher.put(api(`/assessments/${id}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 75, feedback: 'Sudah diperbaiki', versionNo: 3 }] }).expect(200);
-    const changes = await teacher.get(api(`/assessments/${id}/changes`)).expect(200);
-    expect(changes.body).toEqual([expect.objectContaining({ student: 'Siswa Satu', oldScore: 65, newScore: 75, reason: 'Salah input dari lembar jawaban' })]);
-    const admin = await loginAs(app, fx.emails.admin);
-    const audit = await admin.get(api(`/audit-events?entityType=assessment&entityId=${id}`)).expect(200);
-    expect(audit.body.items.map((x: { action: string }) => x.action)).toEqual(expect.arrayContaining(['assessment.create', 'grade.save', 'assessment.publish', 'grade.correct']));
-  });
-});
-
-describe('R2 tugas & pengumpulan (E12)', () => {
-  const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
-  const iso = (msFromNow: number) => new Date(Date.now() + msFromNow).toISOString();
-
-  async function withScheme() {
+describe('R2 penilaian draf (E13 tahap awal)', () => {
+  it('menangani kegiatan dan kiriman privat berversi tanpa duplikasi', async () => {
     const a = await setupClass(app, fx, s, '7A', [2]);
-    const v = await a.cur
-      .post(api('/grade-schemes'))
-      .send({ termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 40 }, { code: 'SAS', name: 'Sumatif akhir', weight: 60 }] })
-      .expect(201);
-    await a.cur.post(api(`/grade-schemes/${v.body.id}/publish`)).expect(204);
-    return a;
-  }
-
-  it('siswa mengirim versi teks/berkas, idempoten, guru melihat kiriman dan menilai lewat penilaian tertaut', async () => {
-    const a = await withScheme();
+    const scheme = await a.cur.post(api('/grade-schemes')).send({
+      termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId,
+      components: [{ code: 'TUGAS', name: 'Tugas', weight: 100 }],
+    }).expect(201);
+    await a.cur.post(api(`/grade-schemes/${scheme.body.id}/publish`)).expect(204);
+    const componentId = (await prisma.gradeComponent.findFirstOrThrow({ where: { schemeVersionId: scheme.body.id } })).id;
     const teacher = await loginAs(app, fx.emails.teacher);
-    const formatif = (await teacher.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200)).body.scheme.components[0].id;
-    const act = await teacher
-      .post(api('/activities'))
-      .send({ teachingAssignmentId: a.ta, title: 'Tugas persamaan linear', instructions: 'Kerjakan nomor 1–5.', opensAt: iso(-3600_000), dueAt: iso(86_400_000), componentId: formatif })
-      .expect(201);
-    await teacher.post(api('/activities')).send({ teachingAssignmentId: a.ta, title: 'Terbalik', opensAt: iso(1000), dueAt: iso(-1000) }).expect(422);
-
     const student = await loginAs(app, s.studentEmail);
-    expect((await student.get(api('/me/activities')).expect(200)).body).toHaveLength(0);
-    await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-awal-1').field('text', 'Jawaban').expect(409);
-    await teacher.post(api(`/activities/${act.body.id}/publish`)).expect(204);
-
-    const list = await student.get(api('/me/activities')).expect(200);
-    expect(list.body).toEqual([expect.objectContaining({ id: act.body.id, canSubmit: true, mine: expect.objectContaining({ state: 'NOT_SUBMITTED' }), assessment: expect.objectContaining({ status: 'DRAFT' }) })]);
-    await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-kosong').expect(422);
-    const v1 = await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-teks-1').field('text', 'x = 4').expect(201);
-    expect(v1.body).toMatchObject({ versionNo: 1, late: false, duplicate: false });
-    const again = await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-teks-1').field('text', 'x = 4').expect(201);
-    expect(again.body).toMatchObject({ versionNo: 1, duplicate: true });
-    await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-berkas-2').attach('file', Buffer.from('bukan pdf'), 'x.pdf').expect(422);
-    const v2 = await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-berkas-2').attach('file', PDF, 'jawaban saya.pdf').expect(201);
-    expect(v2.body.versionNo).toBe(2);
-
     const other = await loginAs(app, s.otherStudentEmail);
-    await other.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-lain-1').field('text', 'coba').expect(403);
-    await other.get(api(`/me/activities/${act.body.id}`)).expect(404);
-
-    const detail = await teacher.get(api(`/activities/${act.body.id}`)).expect(200);
-    expect(detail.body).toMatchObject({ canEdit: true, counts: { total: 1, onTime: 1, late: 0, notSubmitted: 0 } });
-    const row = detail.body.submissions[0];
-    expect(row).toMatchObject({ state: 'ON_TIME', grade: null });
-    expect(row.versions.map((v: { versionNo: number }) => v.versionNo)).toEqual([1, 2]);
-    const url = row.versions[1].file.url.replace('/api/v1', '');
-    expect(row.versions[1].file).toMatchObject({ name: 'jawaban saya.pdf', mimeType: 'application/pdf' });
-
-    const dl = await teacher.get(api(url)).expect(200);
-    expect(Buffer.from(dl.body as Buffer).equals(PDF)).toBe(true);
     const guardian = await loginAs(app, s.guardianEmail);
-    await guardian.get(api(url)).expect(200);
-    expect((await guardian.get(api('/me/activities')).expect(200)).body[0].mine.state).toBe('ON_TIME');
-    await other.get(api(url)).expect(404);
-
-    // Nilai tugas tertaut: tidak terlihat siswa sampai penilaian terbit.
-    const assessmentId = detail.body.assessment.id;
-    await teacher.put(api(`/assessments/${assessmentId}/grades`)).send({ entries: [{ studentId: fx.studentIds[2], state: 'SCORED', score: 88, feedback: 'Langkah lengkap' }] }).expect(200);
-    expect((await student.get(api(`/me/activities/${act.body.id}`)).expect(200)).body.grade).toBeNull();
-    await teacher.post(api(`/assessments/${assessmentId}/publish`)).expect(204);
-    expect((await student.get(api(`/me/activities/${act.body.id}`)).expect(200)).body.grade).toMatchObject({ state: 'SCORED', score: 88, feedback: 'Langkah lengkap' });
-    await teacher.post(api(`/activities/${act.body.id}/cancel`)).expect(409);
-
-    const admin = await loginAs(app, fx.emails.admin);
-    const audit = await admin.get(api(`/audit-events?entityType=learning_activity&entityId=${act.body.id}`)).expect(200);
-    expect(audit.body.items.map((x: { action: string }) => x.action)).toEqual(expect.arrayContaining(['activity.create', 'activity.published', 'submission.create', 'submission.download']));
-  });
-
-  it('tenggat lewat: ditolak bila tidak mengizinkan terlambat, diterima sebagai terlambat bila diizinkan', async () => {
-    const a = await withScheme();
-    const teacher = await loginAs(app, fx.emails.teacher);
-    const body = { title: 'Ringkasan bab 1', instructions: '', opensAt: iso(-7200_000), dueAt: iso(-60_000), kind: 'ASSIGNMENT', allowLate: false, allowResubmit: false, acceptsSubmissions: true };
-    const act = await teacher.post(api('/activities')).send({ teachingAssignmentId: a.ta, ...body }).expect(201);
-    await teacher.post(api(`/activities/${act.body.id}/publish`)).expect(204);
-    const student = await loginAs(app, s.studentEmail);
-    const view = await student.get(api(`/me/activities/${act.body.id}`)).expect(200);
-    expect(view.body).toMatchObject({ canSubmit: false, blockedReason: 'Tenggat sudah lewat dan tugas ini tidak menerima kiriman terlambat.' });
-    await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-telat-1').field('text', 'telat').expect(409);
-
-    await teacher.put(api(`/activities/${act.body.id}`)).send({ ...body, allowLate: true }).expect(204);
-    const late = await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-telat-2').field('text', 'telat tapi diterima').expect(201);
-    expect(late.body).toMatchObject({ late: true });
-    // Kirim ulang tidak diizinkan.
-    await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'kunci-telat-3').field('text', 'ubah').expect(409);
-    expect((await teacher.get(api(`/activities/${act.body.id}`)).expect(200)).body.counts).toMatchObject({ late: 1, onTime: 0 });
-    await teacher.post(api(`/activities/${act.body.id}/close`)).expect(204);
-    expect((await student.get(api(`/me/activities/${act.body.id}`)).expect(200)).body.blockedReason).toBe('Tugas sudah ditutup guru.');
-  });
-});
-
-describe('R2 nilai di portal & notifikasi (E14)', () => {
-  it('siswa dan wali hanya melihat nilai terbit; notifikasi saat nilai dan tugas terbit', async () => {
-    const a = await setupClass(app, fx, s, '7A', [0, 2]);
-    const v = await a.cur
-      .post(api('/grade-schemes'))
-      .send({ termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId, passingScore: 75, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 50 }, { code: 'SAS', name: 'Sumatif akhir', weight: 50 }] })
-      .expect(201);
-    await a.cur.post(api(`/grade-schemes/${v.body.id}/publish`)).expect(204);
-    const teacher = await loginAs(app, fx.emails.teacher);
-    const comps = (await teacher.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200)).body.scheme.components;
-    const me = fx.studentIds[2]!;
-    const f1 = (await teacher.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId: comps[0].id, title: 'Kuis 1' }).expect(201)).body.id;
-    const sas = (await teacher.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId: comps[1].id, title: 'SAS' }).expect(201)).body.id;
-    await teacher.put(api(`/assessments/${f1}/grades`)).send({ entries: [{ studentId: me, state: 'SCORED', score: 90, feedback: 'Bagus' }] }).expect(200);
-    await teacher.put(api(`/assessments/${sas}/grades`)).send({ entries: [{ studentId: me, state: 'SCORED', score: 60 }] }).expect(200);
-
-    const student = await loginAs(app, s.studentEmail);
-    const before = await student.get(api('/me/grades')).expect(200);
-    expect(before.body.subjects).toEqual([expect.objectContaining({ subject: expect.objectContaining({ code: 'MTK' }), assessments: [] })]);
-
-    await teacher.post(api(`/assessments/${f1}/publish`)).expect(204);
-    const g1 = await student.get(api('/me/grades')).expect(200);
-    const mtk = g1.body.subjects[0];
-    expect(mtk.assessments).toEqual([expect.objectContaining({ title: 'Kuis 1', cell: expect.objectContaining({ score: 90, feedback: 'Bagus' }) })]);
-    expect(mtk.final).toMatchObject({ complete: false, issues: ['Belum ada penilaian Sumatif akhir.'] });
-    expect(mtk).toMatchObject({ teacher: 'Pegawai teacher', scheme: expect.objectContaining({ passingScore: 75 }) });
-
-    await teacher.post(api(`/assessments/${sas}/publish`)).expect(204);
-    const g2 = await student.get(api('/me/grades')).expect(200);
-    // 0.5*90 + 0.5*60 = 75 → tidak di bawah KKTP 75
-    expect(g2.body.subjects[0].final).toMatchObject({ complete: true, rounded: 75, belowPassing: false });
-
-    const guardian = await loginAs(app, s.guardianEmail);
-    const gg = await guardian.get(api('/me/grades')).expect(200);
-    expect(gg.body).toMatchObject({ student: { id: me }, classGroup: { code: '7A' } });
-    expect(gg.body.subjects[0].final.rounded).toBe(75);
-    const other = await loginAs(app, s.otherStudentEmail);
-    expect((await other.get(api('/me/grades')).expect(200)).body).toMatchObject({ classGroup: null, subjects: [] });
-    await other.get(api(`/me/grades?studentId=${me}`)).expect(403);
-    await teacher.get(api('/me/grades')).expect(403);
-
-    // Notifikasi: satu per penilaian terbit untuk siswa dan wali; tautan wali menyebut anaknya.
-    const sn = await student.get(api('/notifications')).expect(200);
-    expect(sn.body.items.filter((n: { eventType: string }) => n.eventType === 'grade.published')).toHaveLength(2);
-    const gn = (await guardian.get(api('/notifications')).expect(200)).body.items.filter((n: { eventType: string }) => n.eventType === 'grade.published');
-    expect(gn).toHaveLength(2);
-    expect(gn[0].link).toBe(`/guardian/grades?studentId=${me}`);
-
-    const act = await teacher.post(api('/activities')).send({ teachingAssignmentId: a.ta, title: 'Tugas baru', opensAt: new Date(Date.now() - 60_000).toISOString(), dueAt: new Date(Date.now() + 86_400_000).toISOString() }).expect(201);
-    await teacher.post(api(`/activities/${act.body.id}/publish`)).expect(204);
-    const an = (await student.get(api('/notifications')).expect(200)).body.items.filter((n: { eventType: string }) => n.eventType === 'activity.published');
-    expect(an).toEqual([expect.objectContaining({ title: 'Tugas baru Matematika', link: `/student/assignments/${act.body.id}` })]);
-  });
-});
-
-describe('R2 rapor (E15)', () => {
-  it('deskripsi guru → pengajuan wali kelas → dikembalikan/disetujui kepala sekolah → PDF berversi di portal', async () => {
-    const a = await setupClass(app, fx, s, '7A', [0, 2]);
-    await createUser(prisma, fx, 'Kepala Sekolah', 'kepsek@tes.test', 'MANAGEMENT', 'employee');
-    const v = await a.cur
-      .post(api('/grade-schemes'))
-      .send({ termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId, passingScore: 75, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 50 }, { code: 'SAS', name: 'Sumatif akhir', weight: 50 }] })
-      .expect(201);
-    await a.cur.post(api(`/grade-schemes/${v.body.id}/publish`)).expect(204);
-    const teacher = await loginAs(app, fx.emails.teacher);
-    const comps = (await teacher.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200)).body.scheme.components;
-    const [s0, me] = [fx.studentIds[0]!, fx.studentIds[2]!];
-    const ids: string[] = [];
-    for (const [i, c] of comps.entries()) {
-      const id = (await teacher.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId: c.id, title: `Penilaian ${i + 1}` }).expect(201)).body.id;
-      await teacher.put(api(`/assessments/${id}/grades`)).send({ entries: [{ studentId: s0, state: 'SCORED', score: 80 }, { studentId: me, state: 'SCORED', score: i ? 60 : 90 }] }).expect(200);
-      await teacher.post(api(`/assessments/${id}/publish`)).expect(204);
-      ids.push(id);
-    }
-
-    // Wali kelas: rapor bermasalah karena deskripsi kosong, tidak bisa diajukan.
-    const homeroom = await loginAs(app, s.homeroomEmail);
-    const c1 = await homeroom.get(api(`/report-cards?classGroupId=${a.cls}`)).expect(200);
-    expect(c1.body).toMatchObject({ canSubmit: true, canApprove: false });
-    expect(c1.body.rows).toHaveLength(2);
-    expect(c1.body.rows[0].issues).toEqual(['Matematika: deskripsi capaian belum diisi.']);
-    const cardIds = c1.body.rows.map((r: { id: string }) => r.id);
-    const myCard = c1.body.rows.find((r: { student: { id: string } }) => r.student.id === me).id;
-    await homeroom.post(api('/report-cards/submit')).send({ ids: cardIds }).expect(422);
-    await teacher.post(api('/report-cards/submit')).send({ ids: cardIds }).expect(403);
-
-    // Guru mapel menulis deskripsi.
-    const d = await teacher.get(api(`/report-cards/descriptions?teachingAssignmentId=${a.ta}`)).expect(200);
-    expect(d.body.rows.find((r: { studentId: string }) => r.studentId === me)).toMatchObject({ finalScore: 75, locked: false });
-    await teacher
-      .put(api('/report-cards/descriptions'))
-      .send({ teachingAssignmentId: a.ta, entries: [s0, me].map((studentId) => ({ studentId, highestAchievement: 'Menyelesaikan persamaan linear', needsImprovement: 'Membaca diagram' })) })
-      .expect(204);
-    await homeroom.get(api(`/report-cards/descriptions?teachingAssignmentId=${a.ta}`)).expect(200); // wali kelas boleh membaca
-    await homeroom.put(api('/report-cards/descriptions')).send({ teachingAssignmentId: a.ta, entries: [{ studentId: me, highestAchievement: 'x' }] }).expect(403);
-
-    await homeroom.put(api(`/report-cards/${myCard}/note`)).send({ homeroomNote: 'Pertahankan semangat belajar.' }).expect(204);
-    const pre = await homeroom.get(api(`/report-cards/${myCard}`)).expect(200);
-    expect(pre.body).toMatchObject({
-      status: 'DRAFT',
-      issues: [],
-      content: { homeroomNote: 'Pertahankan semangat belajar.', classGroup: { code: '7A' }, subjects: [expect.objectContaining({ finalScore: 75, highestAchievement: 'Menyelesaikan persamaan linear' })] },
-    });
-    await homeroom.post(api('/report-cards/submit')).send({ ids: cardIds }).expect(204);
-    await teacher.put(api('/report-cards/descriptions')).send({ teachingAssignmentId: a.ta, entries: [{ studentId: me, highestAchievement: 'Ubah' }] }).expect(409);
-
-    // Kepala sekolah mengembalikan satu, lalu menyetujui setelah diajukan ulang.
-    const head = await loginAs(app, 'kepsek@tes.test');
-    await teacher.post(api('/report-cards/approve')).send({ ids: cardIds }).expect(403);
-    await head.post(api(`/report-cards/${myCard}/return`)).send({ note: 'Catatan wali kelas terlalu singkat.' }).expect(204);
-    const hn = (await homeroom.get(api('/notifications')).expect(200)).body.items.filter((n: { eventType: string }) => n.eventType === 'report_card.returned');
-    expect(hn).toEqual([expect.objectContaining({ body: 'Catatan wali kelas terlalu singkat.', link: `/teacher/report-cards/card/${myCard}` })]);
-    await head.post(api('/report-cards/approve')).send({ ids: cardIds }).expect(409);
-    await homeroom.put(api(`/report-cards/${myCard}/note`)).send({ homeroomNote: 'Pertahankan semangat belajar dan tingkatkan latihan soal cerita.' }).expect(204);
-    await homeroom.post(api('/report-cards/submit')).send({ ids: [myCard] }).expect(204);
-    await head.post(api('/report-cards/approve')).send({ ids: cardIds }).expect(204);
-
-    const ov = await head.get(api('/report-cards/overview')).expect(200);
-    expect(ov.body.classes).toEqual([expect.objectContaining({ classGroup: expect.objectContaining({ code: '7A' }), students: 2, counts: { DRAFT: 0, SUBMITTED: 0, RETURNED: 0, PUBLISHED: 2 } })]);
-
-    // Portal siswa: rapor terbit + unduh PDF tercatat.
-    const student = await loginAs(app, s.studentEmail);
-    const p1 = await student.get(api('/me/report-cards')).expect(200);
-    expect(p1.body.items).toEqual([expect.objectContaining({ versionNo: 1, content: expect.objectContaining({ homeroomNote: expect.stringContaining('soal cerita'), subjects: [expect.objectContaining({ finalScore: 75 })] }) })]);
-    const fileUrl: string = p1.body.items[0].versions[0].fileUrl;
-    const pdf = await student
-      .get(fileUrl)
-      .buffer(true)
-      .parse((res, cb) => {
-        const parts: Buffer[] = [];
-        res.on('data', (b: Buffer) => parts.push(b));
-        res.on('end', () => cb(null, Buffer.concat(parts)));
-      })
-      .expect(200);
-    expect(pdf.headers['content-type']).toBe('application/pdf');
-    expect((pdf.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
-    expect(await prisma.auditEvent.count({ where: { action: 'report_card.download' } })).toBe(1);
-    const other = await loginAs(app, s.otherStudentEmail);
-    await other.get(fileUrl).expect(404);
-    const guardian = await loginAs(app, s.guardianEmail);
-    expect((await guardian.get(api('/me/report-cards')).expect(200)).body.items).toHaveLength(1);
-    await guardian.get(fileUrl).expect(200);
-
-    // Rapor terbit tidak berubah walau nilai sumber dikoreksi.
-    const cell = (await teacher.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200)).body.rows.find((r: { studentId: string }) => r.studentId === me).cells[ids[1]!];
-    await teacher.put(api(`/assessments/${ids[1]}/grades`)).send({ reason: 'Salah input', entries: [{ studentId: me, state: 'SCORED', score: 80, versionNo: cell.versionNo }] }).expect(200);
-    expect((await student.get(api('/me/report-cards')).expect(200)).body.items[0].content.subjects[0].finalScore).toBe(75);
-
-    // Revisi: versi lama tetap, versi baru beralasan.
-    await homeroom.post(api(`/report-cards/${myCard}/revise`)).send({ reason: 'Koreksi nilai sumatif akhir' }).expect(204);
-    expect((await student.get(api('/me/report-cards')).expect(200)).body.items[0].versionNo).toBe(1);
-    await homeroom.post(api('/report-cards/submit')).send({ ids: [myCard] }).expect(204);
-    await head.post(api('/report-cards/approve')).send({ ids: [myCard] }).expect(204);
-    const p2 = (await student.get(api('/me/report-cards')).expect(200)).body.items[0];
-    expect(p2).toMatchObject({ versionNo: 2, content: { subjects: [expect.objectContaining({ finalScore: 85 })] } });
-    expect(p2.versions.map((x: { versionNo: number; revisionReason: string | null }) => [x.versionNo, x.revisionReason])).toEqual([
-      [2, 'Koreksi nilai sumatif akhir'],
-      [1, null],
+    const { body: activity } = await teacher.post(api('/activities')).send({
+      teachingAssignmentId: a.ta, componentId, kind: 'ASSIGNMENT', title: 'Latihan aljabar', instructions: 'Kerjakan soal.',
+      opensAt: new Date(Date.now() - 60_000).toISOString(), dueAt: new Date(Date.now() + 600_000).toISOString(),
+    }).expect(201);
+    const path = api(`/activities/${activity.id}/submissions`);
+    const input = { text: 'Jawaban', idempotencyKey: crypto.randomUUID() };
+    expect((await student.get(api('/activities/portal')).expect(200)).body).toEqual([]);
+    await teacher.post(api(`/activities/${activity.id}/status`)).send({ status: 'PUBLISHED' }).expect(204);
+    expect((await guardian.get(api('/notifications')).expect(200)).body.items).toEqual([
+      expect.objectContaining({ eventType: 'activity.published', link: `/guardian/activities?studentId=${fx.studentIds[2]}` }),
     ]);
-    const sn = (await student.get(api('/notifications')).expect(200)).body.items.filter((n: { eventType: string }) => n.eventType === 'report_card.published');
-    expect(sn.map((n: { title: string }) => n.title).sort()).toEqual([expect.stringMatching(/diperbarui$/), expect.stringMatching(/terbit$/)]);
+    expect((await other.get(api('/notifications')).expect(200)).body.items).toEqual([]);
+    await other.post(path).send(input).expect(404);
+    await guardian.post(path).send(input).expect(403);
+    expect((await student.post(path).send(input).expect(200)).body.versionNo).toBe(1);
+    expect((await student.post(path).send(input).expect(200)).body.versionNo).toBe(1);
+    await student.post(path).field('idempotencyKey', crypto.randomUUID()).attach('file', Buffer.from('not a PDF'), 'invalid.pdf').expect(422);
+    const attachment = Buffer.from('%PDF-1.4\n%%EOF\n');
+    expect((await student.post(path).field('idempotencyKey', crypto.randomUUID()).attach('file', attachment, 'jawaban.pdf').expect(200)).body.versionNo).toBe(2);
+    const review = await teacher.get(path).expect(200);
+    const filePath = `${path}/${review.body.submissions[0].versions[0].id}/file`;
+    await teacher.get(filePath).expect('Content-Type', /application\/pdf/).expect(200);
+    await guardian.get(filePath).expect(403);
+    const portal = await guardian.get(api('/activities/portal')).expect(200);
+    expect(portal.body[0]).toMatchObject({ canSubmit: false, submissions: [{ latestVersionNo: 2 }] });
+    await teacher.post(api(`/activities/${activity.id}/status`)).send({ status: 'CLOSED' }).expect(204);
+    await student.post(path).send({ ...input, idempotencyKey: crypto.randomUUID() }).expect(409);
   });
-});
-
-describe('R2 beranda (E16)', () => {
-  it('angka guru, wali kelas, kurikulum, dan pimpinan dengan definisi dan sumber', async () => {
-    const a = await setupClass(app, fx, s, '7A', [0, 2]);
-    await createUser(prisma, fx, 'Kepala Sekolah', 'kepsek@tes.test', 'MANAGEMENT', 'employee');
-    const v = await a.cur
-      .post(api('/grade-schemes'))
-      .send({ termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId, passingScore: 75, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 50 }, { code: 'SAS', name: 'Sumatif akhir', weight: 50 }] })
-      .expect(201);
-    await a.cur.post(api(`/grade-schemes/${v.body.id}/publish`)).expect(204);
+  it('koreksi nilai terbit wajib beralasan, berversi, dan tercatat', async () => {
+    const a = await setupClass(app, fx, s, '7A', [2]);
+    const scheme = await a.cur.post(api('/grade-schemes')).send({ termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 100 }] }).expect(201);
+    await a.cur.post(api(`/grade-schemes/${scheme.body.id}/publish`)).expect(204);
+    const componentId = (await prisma.gradeComponent.findFirstOrThrow({ where: { schemeVersionId: scheme.body.id } })).id;
     const teacher = await loginAs(app, fx.emails.teacher);
-    const comps = (await teacher.get(api(`/gradebook?teachingAssignmentId=${a.ta}`)).expect(200)).body.scheme.components;
-    const me = fx.studentIds[2]!;
-    const act = await teacher
-      .post(api('/activities'))
-      .send({ teachingAssignmentId: a.ta, componentId: comps[0].id, title: 'Tugas 1', opensAt: new Date(Date.now() - 60_000).toISOString(), dueAt: new Date(Date.now() + 86_400_000).toISOString() })
-      .expect(201);
-    await teacher.post(api(`/activities/${act.body.id}/publish`)).expect(204);
-    await teacher.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId: comps[1].id, title: 'SAS' }).expect(201);
     const student = await loginAs(app, s.studentEmail);
-    await student.post(api(`/activities/${act.body.id}/submissions`)).field('idempotencyKey', 'beranda-1').field('text', 'Jawaban').expect(201);
-
-    const metric = async (agent: Awaited<ReturnType<typeof loginAs>>, key: string) => {
-      const body = (await agent.get(api('/dashboard/summary')).expect(200)).body;
-      expect(body.metricsUnavailable).toBeUndefined();
-      return body.metrics.find((m: { key: string }) => m.key === key);
-    };
-    expect(await metric(teacher, 'submissions_ungraded')).toMatchObject({ value: 1, href: '/teacher/assignments', definition: expect.any(String), source: expect.stringContaining('submission') });
-    expect(await metric(teacher, 'assessments_unpublished')).toMatchObject({ value: 2 });
-    expect(await metric(teacher, 'report_descriptions_missing')).toMatchObject({ value: 2, note: 'dari 2 siswa × mapel' });
-
-    const linked = (await teacher.get(api(`/activities/${act.body.id}`)).expect(200)).body.assessment.id;
-    await teacher.put(api(`/assessments/${linked}/grades`)).send({ entries: [{ studentId: me, state: 'SCORED', score: 80 }] }).expect(200);
-    await teacher.put(api('/report-cards/descriptions')).send({ teachingAssignmentId: a.ta, entries: [{ studentId: me, highestAchievement: 'Persamaan linear', needsImprovement: 'Diagram' }] }).expect(204);
-    expect(await metric(teacher, 'submissions_ungraded')).toMatchObject({ value: 0 });
-    expect(await metric(teacher, 'report_descriptions_missing')).toMatchObject({ value: 1 });
-
+    const id = (await teacher.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId, title: 'Koreksi ulangan' }).expect(201)).body.id as string;
+    const gradePath = api(`/assessments/${id}/grades/${fx.studentIds[2]}`);
+    const correctionPath = `${gradePath}/correction`;
+    await teacher.put(gradePath).send({ state: 'SCORED', score: 70, feedback: null, versionNo: 0 }).expect(200);
+    const input = { state: 'SCORED', score: 85, feedback: 'Perbaikan jawaban', versionNo: 1, reason: 'Jawaban nomor tiga sebelumnya belum dihitung.' };
+    await teacher.put(correctionPath).send(input).expect(409);
+    await teacher.post(api(`/assessments/${id}/publish`)).expect(204);
+    await teacher.put(correctionPath).send({ ...input, reason: '' }).expect(422);
+    await student.put(correctionPath).send(input).expect(403);
+    const otherTeacher = await loginAs(app, s.homeroomEmail);
+    await otherTeacher.put(correctionPath).send(input).expect(404);
+    const corrected = await teacher.put(correctionPath).send(input).expect(200);
+    expect(corrected.body).toMatchObject({ score: 85, versionNo: 2, feedback: 'Perbaikan jawaban' });
+    await teacher.put(correctionPath).send(input).expect(409);
+    const history = await teacher.get(`${gradePath}/changes`).expect(200);
+    expect(history.body).toEqual([expect.objectContaining({ oldState: 'SCORED', oldScore: 70, newState: 'SCORED', newScore: 85, reason: input.reason })]);
+    await otherTeacher.get(`${gradePath}/changes`).expect(404);
+    expect((await student.get(api('/me/grades')).expect(200)).body.items[0]).toMatchObject({ score: 85, feedback: 'Perbaikan jawaban' });
+    expect(await prisma.auditEvent.count({ where: { action: 'grade_entry.correct_published' } })).toBe(1);
+  });
+  it('portal hanya menampilkan nilai terbit untuk siswa sendiri dan wali berizin', async () => {
+    const a = await setupClass(app, fx, s, '7A', [2, 3]);
+    const scheme = await a.cur.post(api('/grade-schemes')).send({ termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 100 }] }).expect(201);
+    await a.cur.post(api(`/grade-schemes/${scheme.body.id}/publish`)).expect(204);
+    const componentId = (await prisma.gradeComponent.findFirstOrThrow({ where: { schemeVersionId: scheme.body.id } })).id;
+    const teacher = await loginAs(app, fx.emails.teacher);
+    const student = await loginAs(app, s.studentEmail);
+    const other = await loginAs(app, s.otherStudentEmail);
+    const guardian = await loginAs(app, s.guardianEmail);
+    const studentId = fx.studentIds[2]!;
+    const otherId = fx.studentIds[3]!;
+    const id = (await teacher.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId, title: 'Ulangan portal' }).expect(201)).body.id as string;
+    await teacher.put(api(`/assessments/${id}/grades/${studentId}`)).send({ state: 'SCORED', score: 0, feedback: 'Perlu latihan', versionNo: 0 }).expect(200);
+    await teacher.put(api(`/assessments/${id}/grades/${otherId}`)).send({ state: 'EXCUSED', score: null, feedback: null, versionNo: 0 }).expect(200);
+    expect((await student.get(api('/me/grades')).expect(200)).body.items).toEqual([]);
+    expect((await guardian.get(api('/notifications')).expect(200)).body.items).toEqual([]);
+    const aggregatesPath = api(`/assessments/aggregates?teachingAssignmentId=${a.ta}`);
+    expect((await teacher.get(aggregatesPath).expect(200)).body).toEqual([]);
+    await student.get(aggregatesPath).expect(403);
+    await student.get(api(`/me/grades?studentId=${otherId}`)).expect(403);
+    await guardian.get(api(`/me/grades?studentId=${otherId}`)).expect(403);
+    await teacher.post(api(`/assessments/${id}/publish`)).expect(204);
+    const aggregate = await teacher.get(aggregatesPath).expect(200);
+    const academicRecap = api(`/grade-recap?teachingAssignmentId=${a.ta}`);
+    await teacher.get(academicRecap).expect(403);
+    expect((await a.cur.get(academicRecap).expect(200)).body).toEqual(aggregate.body);
+    expect((await a.cur.get(api('/grade-recap/options')).expect(200)).body).toContainEqual(expect.objectContaining({ id: a.ta }));
+    await teacher.post(api(`/assessments/${id}/publish`)).expect(409);
+    expect((await student.get(api('/notifications')).expect(200)).body.items).toEqual([
+      expect.objectContaining({ eventType: 'assessment.published', link: '/student/grades' }),
+    ]);
+    expect((await guardian.get(api('/notifications')).expect(200)).body.items).toEqual([
+      expect.objectContaining({ eventType: 'assessment.published', link: `/guardian/grades?studentId=${studentId}` }),
+    ]);
+    expect((await teacher.get(api('/notifications')).expect(200)).body.items).toEqual([]);
+    expect(aggregate.body).toEqual([expect.objectContaining({
+      students: expect.arrayContaining([
+        expect.objectContaining({ studentId, finalScore: 0, status: 'COMPLETE' }),
+        expect.objectContaining({ studentId: otherId, finalScore: null, status: 'EXCUSED' }),
+      ]),
+    })]);
+    const personalGrades = (await student.get(api('/me/grades')).expect(200)).body;
+    await student.get(api('/report-cards/teacher-dashboard')).expect(403);
+    expect((await teacher.get(api('/report-cards/teacher-dashboard')).expect(200)).body).toMatchObject({ drafts: 0, missingDescriptions: 2 });
+    const curriculumDashboard = api('/report-cards/curriculum-dashboard');
+    await teacher.get(curriculumDashboard).expect(403);
+    expect((await a.cur.get(curriculumDashboard).expect(200)).body).toMatchObject({
+      missingSchemes: 0, groups: [expect.objectContaining({ id: a.cls, total: 2, counts: expect.objectContaining({ NOT_STARTED: 2 }) })],
+    });
+    expect(personalGrades.items).toEqual([expect.objectContaining({ assessmentId: id, score: 0, state: 'SCORED', feedback: 'Perlu latihan' })]);
+    expect(personalGrades.summaries).toEqual([expect.objectContaining({ subject: 'Matematika', classCode: '7A', finalScore: 0, status: 'COMPLETE' })]);
     const homeroom = await loginAs(app, s.homeroomEmail);
-    expect(await metric(homeroom, 'report_cards_issues_7A')).toMatchObject({ value: 2, note: '0 siap diajukan · 0 diajukan · 0 terbit, dari 2 siswa', href: `/teacher/report-cards/${a.cls}` });
-    expect(await metric(a.cur, 'report_cards_published')).toMatchObject({ value: 0, note: 'dari 2 siswa · 0 menunggu persetujuan · 0 dikembalikan' });
-    expect(await metric(a.cur, 'report_cards_waiting')).toBeUndefined();
-    const head = await loginAs(app, 'kepsek@tes.test');
-    expect(await metric(head, 'report_cards_waiting')).toMatchObject({ value: 0, warn: true, href: '/academics/report-cards' });
-    expect(await metric(head, 'report_cards_published')).toBeUndefined();
-    expect(await metric(student, 'submissions_ungraded')).toBeUndefined();
+    expect((await homeroom.get(api('/report-cards/homeroom-options')).expect(200)).body).toContainEqual(
+      expect.objectContaining({ classGroupId: a.cls, termId: s.termId }),
+    );
+    expect((await teacher.get(api('/report-cards/homeroom-options')).expect(200)).body).toEqual([]);
+    const preview = api(`/report-cards/preview?classGroupId=${a.cls}&termId=${s.termId}`);
+    await teacher.get(preview).expect(404);
+    const before = await homeroom.get(preview).expect(200);
+    const submission = { classGroupId: a.cls, termId: s.termId, studentId, homeroomNote: 'Terus berlatih.' };
+    await homeroom.post(api('/report-cards/submit')).send(submission).expect(409);
+    expect(before.body.students).toContainEqual(expect.objectContaining({
+      studentId, ready: false, subjects: [expect.objectContaining({ score: 0, issues: ['DESCRIPTION_MISSING'] })],
+    }));
+    const description = { teachingAssignmentId: a.ta, studentId, highestAchievement: 'Memahami dasar aljabar.', needsImprovement: 'Latih persamaan linear.' };
+    await homeroom.put(api('/report-cards/subject-description')).send(description).expect(404);
+    await teacher.put(api('/report-cards/subject-description')).send(description).expect(200);
+    const descriptionsPath = api(`/report-cards/subject-descriptions?teachingAssignmentId=${a.ta}`);
+    await homeroom.get(descriptionsPath).expect(404);
+    expect((await teacher.get(descriptionsPath).expect(200)).body).toContainEqual(expect.objectContaining({
+      studentId, editable: true, description: { highestAchievement: description.highestAchievement, needsImprovement: description.needsImprovement },
+    }));
+    const after = await homeroom.get(preview).expect(200);
+    expect(after.body.students).toContainEqual(expect.objectContaining({ studentId, ready: true }));
+    const report = after.body.students.find((row: { studentId: string }) => row.studentId === studentId);
+    await teacher.post(api('/report-cards/submit')).send(submission).expect(404);
+    await homeroom.post(api('/report-cards/submit')).send(submission).expect(204);
+    expect((await teacher.get(descriptionsPath).expect(200)).body).toContainEqual(expect.objectContaining({ studentId, editable: false }));
+    await teacher.put(api('/report-cards/subject-description')).send(description).expect(409);
+    await homeroom.get(api('/report-cards/review-queue')).expect(403);
+    const admin = await loginAs(app, fx.emails.admin);
+    expect((await admin.get(api('/report-cards/review-queue')).expect(200)).body).toContainEqual(expect.objectContaining({ id: report.reportId }));
+    await admin.post(api(`/report-cards/${report.reportId}/return`)).send({ reason: 'Tinjau catatan wali kelas.' }).expect(204);
+    const returned = await homeroom.get(preview).expect(200);
+    expect(returned.body.students).toContainEqual(expect.objectContaining({ studentId, status: 'RETURNED', returnNote: 'Tinjau catatan wali kelas.' }));
+    await homeroom.post(api('/report-cards/submit')).send(submission).expect(204);
+    const approve = api(`/report-cards/${report.reportId}/approve`);
+    await homeroom.post(approve).expect(403);
+    await admin.get(api(`/report-cards/${report.reportId}/review`)).expect(200);
+    await admin.post(approve).expect(204);
+    await admin.post(approve).expect(409);
+    const versions = await student.get(api('/report-cards/portal')).expect(200);
+    expect(versions.body).toHaveLength(1);
+    const file = api(`/report-cards/portal/${versions.body[0].id}/file`);
+    const original = await student.get(file).expect('Content-Type', /application\/pdf/).expect(200);
+    expect(Buffer.from(original.body).subarray(0, 5).toString()).toBe('%PDF-');
+    await other.get(file).expect(404);
+    await guardian.get(`${file}?studentId=${studentId}`).expect(200);
+    await teacher.put(api(`/assessments/${id}/grades/${studentId}/correction`)).send({
+      state: 'SCORED', score: 79, feedback: null, reason: 'Koreksi setelah rapor terbit.', versionNo: 1,
+    }).expect(200);
+    const downloaded = await student.get(file).expect(200);
+    expect(downloaded.body).toEqual(original.body);
+    const reopen = api(`/report-cards/${report.reportId}/reopen`);
+    const reason = 'Perbaikan nilai setelah pemeriksaan.';
+    await homeroom.post(reopen).send({ reason }).expect(403);
+    await admin.post(reopen).send({ reason }).expect(204);
+    await student.get(file).expect(200);
+    await homeroom.post(api('/report-cards/submit')).send(submission).expect(204);
+    await admin.post(approve).expect(409);
+    await admin.post(approve).send({ revisionReason: reason }).expect(204);
+    const revised = await student.get(api('/report-cards/portal')).expect(200);
+    expect(revised.body.map((version: { versionNo: number }) => version.versionNo)).toEqual([2, 1]);
+    expect((await student.get(file).expect(200)).body).toEqual(original.body);
+    expect((await prisma.reportCardVersion.findUniqueOrThrow({ where: { id: revised.body[0].id } })).revisionReason).toBe(reason);
+    expect((await guardian.get(api('/notifications')).expect(200)).body.items.filter((item: { eventType: string }) => item.eventType === 'report_card.published')).toEqual([
+      expect.objectContaining({ link: `/guardian/reports?studentId=${studentId}` }),
+      expect.objectContaining({ link: `/guardian/reports?studentId=${studentId}` }),
+    ]);
+    expect((await other.get(api('/me/grades')).expect(200)).body.items).toEqual([expect.objectContaining({ state: 'EXCUSED', score: null })]);
+    expect((await guardian.get(api(`/me/grades?studentId=${studentId}`)).expect(200)).body.items).toHaveLength(1);
+    await prisma.studentGuardian.updateMany({ where: { studentId }, data: { canViewAcademic: false } });
+    await guardian.get(api(`/me/grades?studentId=${studentId}`)).expect(403);
+  });
+  it('hanya guru penugasan membuat dan melihat penilaian dari komponen skema terbit', async () => {
+    const a = await setupClass(app, fx, s, '7A', [2]);
+    const teacher = await loginAs(app, fx.emails.teacher);
+    const noScheme = { teachingAssignmentId: a.ta, componentId: crypto.randomUUID(), title: 'Ulangan harian 1', assessedOn: today() };
+    await teacher.post(api('/assessments')).send(noScheme).expect(409);
+
+    const scheme = await a.cur.post(api('/grade-schemes')).send({
+      termId: s.termId,
+      subjectId: s.mathId,
+      gradeLevelId: s.gradeId,
+      components: [{ code: 'FORMATIF', name: 'Formatif', weight: 100 }],
+    }).expect(201);
+    await a.cur.post(api(`/grade-schemes/${scheme.body.id}/publish`)).expect(204);
+    const componentId = (await prisma.gradeComponent.findFirstOrThrow({ where: { schemeVersionId: scheme.body.id } })).id;
+    const options = await teacher.get(api('/assessments/options')).expect(200);
+    expect(options.body).toEqual([expect.objectContaining({ teachingAssignmentId: a.ta, classCode: '7A', subjectName: 'Matematika', components: [expect.objectContaining({ id: componentId })] })]);
+
+    await teacher.post(api('/assessments')).send({ ...noScheme, componentId: crypto.randomUUID() }).expect(422);
+    await teacher.post(api('/assessments')).send({ ...noScheme, componentId, assessedOn: addDays(today(), 200) }).expect(422);
+    const created = await teacher.post(api('/assessments')).send({ ...noScheme, componentId }).expect(201);
+    expect(created.body).toMatchObject({ title: 'Ulangan harian 1', status: 'DRAFT', teachingAssignmentId: a.ta, component: { id: componentId, code: 'FORMATIF', schemeVersionNo: 1 } });
+
+    const list = await teacher.get(api(`/assessments?teachingAssignmentId=${a.ta}`)).expect(200);
+    expect(list.body).toHaveLength(1);
+    expect(list.body[0].id).toBe(created.body.id);
+    const otherTeacher = await loginAs(app, s.homeroomEmail);
+    expect((await otherTeacher.get(api('/assessments/options')).expect(200)).body).toEqual([]);
+    await otherTeacher.get(api(`/assessments?teachingAssignmentId=${a.ta}`)).expect(404);
+    await otherTeacher.post(api('/assessments')).send({ ...noScheme, componentId }).expect(404);
+    const student = await loginAs(app, s.studentEmail);
+    await student.get(api(`/assessments?teachingAssignmentId=${a.ta}`)).expect(403);
+    await student.post(api('/assessments')).send({ ...noScheme, componentId }).expect(403);
+    expect(await prisma.auditEvent.count({ where: { action: 'assessment.create', entityId: created.body.id } })).toBe(1);
+  });
+
+  it('lembar nilai membedakan empat keadaan dan menolak versi lama atau siswa di luar rombel', async () => {
+    const a = await setupClass(app, fx, s, '7A', [0, 2]);
+    const scheme = await a.cur.post(api('/grade-schemes')).send({
+      termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId,
+      components: [{ code: 'FORMATIF', name: 'Formatif', weight: 100 }],
+    }).expect(201);
+    await a.cur.post(api(`/grade-schemes/${scheme.body.id}/publish`)).expect(204);
+    const componentId = (await prisma.gradeComponent.findFirstOrThrow({ where: { schemeVersionId: scheme.body.id } })).id;
+    const teacher = await loginAs(app, fx.emails.teacher);
+    const assessmentId = (await teacher.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId, title: 'Latihan persamaan', assessedOn: today() }).expect(201)).body.id as string;
+    const sheetPath = api(`/assessments/${assessmentId}/grades`);
+    const initial = await teacher.get(sheetPath).expect(200);
+    expect(initial.body.students).toHaveLength(2);
+    expect(initial.body.students.every((r: { state: string; score: number | null; versionNo: number }) => r.state === 'PENDING' && r.score === null && r.versionNo === 0)).toBe(true);
+    const studentId = fx.studentIds[0]!;
+    const rowPath = api(`/assessments/${assessmentId}/grades/${studentId}`);
+    await teacher.put(rowPath).send({ state: 'SCORED', score: -1, feedback: null, versionNo: 0 }).expect(422);
+    await teacher.put(rowPath).send({ state: 'SCORED', score: 90.55, feedback: null, versionNo: 0 }).expect(422);
+    await teacher.put(rowPath).send({ state: 'PENDING', score: 0, feedback: null, versionNo: 0 }).expect(422);
+    const scored = await teacher.put(rowPath).send({ state: 'SCORED', score: 0, feedback: 'Perlu latihan', versionNo: 0 }).expect(200);
+    expect(scored.body).toMatchObject({ state: 'SCORED', score: 0, versionNo: 1 });
+    await teacher.put(rowPath).send({ state: 'SCORED', score: 80, feedback: null, versionNo: 0 }).expect(409);
+    const missing = await teacher.put(rowPath).send({ state: 'MISSING', score: null, feedback: null, versionNo: 1 }).expect(200);
+    expect(missing.body).toMatchObject({ state: 'MISSING', score: null, versionNo: 2 });
+    const excused = await teacher.put(rowPath).send({ state: 'EXCUSED', score: null, feedback: 'Dispensasi', versionNo: 2 }).expect(200);
+    expect(excused.body).toMatchObject({ state: 'EXCUSED', score: null, versionNo: 3 });
+    const pending = await teacher.put(rowPath).send({ state: 'PENDING', score: null, feedback: null, versionNo: 3 }).expect(200);
+    expect(pending.body).toMatchObject({ state: 'PENDING', score: null, versionNo: 4 });
+    await teacher.put(api(`/assessments/${assessmentId}/grades/${fx.studentIds[1]}`)).send({ state: 'SCORED', score: 80, feedback: null, versionNo: 0 }).expect(404);
+    const other = await loginAs(app, s.homeroomEmail);
+    await other.get(sheetPath).expect(404);
+    await other.put(rowPath).send({ state: 'SCORED', score: 80, feedback: null, versionNo: 4 }).expect(404);
+    const student = await loginAs(app, s.studentEmail);
+    await student.get(sheetPath).expect(403);
+    expect(await prisma.auditEvent.count({ where: { action: 'grade_entry.save_draft', entityType: 'grade_entry' } })).toBe(4);
+    const first = { studentId, state: 'SCORED', score: 75, feedback: null, versionNo: 4 };
+    const second = { ...first, studentId: fx.studentIds[2], score: 0, versionNo: 0 };
+    await teacher.put(sheetPath).send({ rows: [first, first] }).expect(422);
+    await teacher.put(sheetPath).send({ rows: [second, { ...first, versionNo: 3 }] }).expect(409);
+    const bulk = await teacher.put(sheetPath).send({ rows: [first, second] }).expect(200);
+    expect(bulk.body).toMatchObject({ changed: 2, rows: [{ versionNo: 5, score: 75 }, { versionNo: 1, score: 0 }] });
+    const bookPath = api(`/assessments/grade-book?teachingAssignmentId=${a.ta}`);
+    await other.get(bookPath).expect(404);
+    const book = await teacher.get(bookPath).expect(200);
+    expect(book.body.assessments).toEqual([expect.objectContaining({ id: assessmentId, status: 'DRAFT' })]);
+    expect(book.body.students).toHaveLength(2);
+    expect(book.body.students).toContainEqual(expect.objectContaining({
+      studentId: fx.studentIds[2], cells: { [assessmentId]: { state: 'SCORED', score: 0, feedback: null } },
+    }));
+  });
+
+  it('hanya menerbitkan penilaian setelah seluruh siswa selesai dinilai', async () => {
+    const a = await setupClass(app, fx, s, '7A', [0, 2, 3]);
+    const scheme = await a.cur.post(api('/grade-schemes')).send({ termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 100 }] }).expect(201);
+    await a.cur.post(api(`/grade-schemes/${scheme.body.id}/publish`)).expect(204);
+    const componentId = (await prisma.gradeComponent.findFirstOrThrow({ where: { schemeVersionId: scheme.body.id } })).id;
+    const teacher = await loginAs(app, fx.emails.teacher);
+    const id = (await teacher.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId, title: 'Sumatif bab 1' }).expect(201)).body.id as string;
+    const publishPath = api(`/assessments/${id}/publish`);
+    await teacher.post(publishPath).expect(409);
+    await teacher.put(api(`/assessments/${id}/grades/${fx.studentIds[0]}`)).send({ state: 'SCORED', score: 0, feedback: null, versionNo: 0 }).expect(200);
+    await teacher.post(publishPath).expect(409);
+    await teacher.put(api(`/assessments/${id}/grades/${fx.studentIds[2]}`)).send({ state: 'MISSING', score: null, feedback: null, versionNo: 0 }).expect(200);
+    await teacher.put(api(`/assessments/${id}/grades/${fx.studentIds[3]}`)).send({ state: 'SCORED', score: 90, feedback: null, versionNo: 0 }).expect(200);
+    await prisma.enrollment.updateMany({
+      where: { classGroupId: a.cls, studentId: fx.studentIds[3] },
+      data: { validTo: new Date(`${addDays(today(), -1)}T00:00:00Z`) },
+    });
+    const [publication, edit] = await Promise.all([
+      teacher.post(publishPath),
+      teacher.put(api(`/assessments/${id}/grades/${fx.studentIds[0]}`)).send({ state: 'PENDING', score: null, feedback: null, versionNo: 1 }),
+    ]);
+    expect([publication.status, edit.status]).toEqual(
+      publication.status === 204 ? [204, 409] : [409, 200],
+    );
+    if (edit.status === 200) {
+      await teacher.put(api(`/assessments/${id}/grades/${fx.studentIds[0]}`)).send({ state: 'SCORED', score: 0, feedback: null, versionNo: 2 }).expect(200);
+      await teacher.post(publishPath).expect(204);
+    }
+    const published = await teacher.get(api(`/assessments/${id}/grades`)).expect(200);
+    expect(published.body.assessment).toMatchObject({ status: 'PUBLISHED', assessedOn: today() });
+    expect(published.body.students).toHaveLength(2);
+    const moved = await loginAs(app, s.otherStudentEmail);
+    expect((await moved.get(api('/me/grades')).expect(200)).body.items).toEqual([]);
+    await teacher.post(publishPath).expect(409);
+    await teacher.put(api(`/assessments/${id}/grades/${fx.studentIds[0]}`)).send({ state: 'SCORED', score: 70, feedback: null, versionNo: 1 }).expect(409);
+    const sheet = await teacher.get(api(`/assessments/${id}/grades`)).expect(200);
+    expect(sheet.body.assessment.status).toBe('PUBLISHED');
+    const other = await loginAs(app, s.homeroomEmail);
+    await other.post(publishPath).expect(404);
+    const student = await loginAs(app, s.studentEmail);
+    await student.post(publishPath).expect(403);
+    expect(await prisma.auditEvent.count({ where: { action: 'assessment.publish', entityId: id } })).toBe(1);
   });
 });

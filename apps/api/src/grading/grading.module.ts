@@ -1,22 +1,21 @@
 import { Module } from '@nestjs/common';
+import { GradingController } from './grading.controller.js';
+import { SchemesService } from './schemes.service.js';
+import { AssessmentsController } from './assessments.controller.js';
+import { AssessmentsService } from './assessments.service.js';
 import { AcademicsModule } from '../academics/academics.module.js';
 import { CommunicationsModule } from '../communications/communications.module.js';
-import { DocumentsModule } from '../documents/documents.module.js';
-import { ActivitiesController } from './activities.controller.js';
-import { ActivitiesService } from './activities.service.js';
-import { GradebookService } from './gradebook.service.js';
-import { GradingMetricsService } from './grading-metrics.service.js';
-import { GradingController } from './grading.controller.js';
+import { PortalGradesController } from './portal-grades.controller.js';
 import { PortalGradesService } from './portal-grades.service.js';
+import { ActivitiesController } from './activities.controller.js';
+import { DocumentsModule } from '../documents/documents.module.js';
 import { ReportCardsController } from './report-cards.controller.js';
-import { ReportCardsService } from './report-cards.service.js';
-import { SchemesService } from './schemes.service.js';
 
-/** R2 penilaian: skema nilai, capaian pembelajaran, penilaian dan buku nilai, tugas dan pengumpulan, rapor. */
+/** R2 penilaian: skema nilai, capaian, dan penilaian draf (berikutnya: buku nilai dan rapor). */
 @Module({
-  imports: [AcademicsModule, DocumentsModule, CommunicationsModule],
-  controllers: [GradingController, ActivitiesController, ReportCardsController],
-  providers: [SchemesService, GradebookService, ActivitiesService, PortalGradesService, ReportCardsService, GradingMetricsService],
-  exports: [SchemesService, GradebookService, GradingMetricsService],
+  imports: [AcademicsModule, CommunicationsModule, DocumentsModule],
+  controllers: [GradingController, AssessmentsController, PortalGradesController, ActivitiesController, ReportCardsController],
+  providers: [SchemesService, AssessmentsService, PortalGradesService],
+  exports: [SchemesService],
 })
 export class GradingModule {}

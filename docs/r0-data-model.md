@@ -1,6 +1,6 @@
-# Model data Elvara (R0 + R1 + R2)
+# Model data Elvara (R0 + R1)
 
-Tabel Elvara School Ecosystem untuk rilis **R0 Fondasi**, **R1 MVP Operasional** ([PRD](prd.md) bagian 7), dan **R2 Akademik** ([PRD R2](prd-r2.md)). Nama tabel tunggal snake_case mengikuti `architecture_blueprint/05_database_core_tables.md`; kolom memakai nama camelCase dari Prisma. Sumber kebenarannya [`apps/api/prisma/schema.prisma`](../apps/api/prisma/schema.prisma) dan migrasi di `apps/api/prisma/migrations/`. Dokumen ini adalah ringkasan untuk dibaca.
+Tabel Elvara School Ecosystem untuk rilis **R0 Fondasi** dan **R1 MVP Operasional** ([PRD](prd.md) bagian 7). Nama tabel tunggal snake_case mengikuti `architecture_blueprint/05_database_core_tables.md`; kolom memakai nama camelCase dari Prisma. Sumber kebenarannya [`apps/api/prisma/schema.prisma`](../apps/api/prisma/schema.prisma) dan migrasi di `apps/api/prisma/migrations/`. Dokumen ini adalah ringkasan untuk dibaca.
 
 **Konvensi semua tabel**
 - Primary key UUID (`id`). NIS, NIP, dan nomor pegawai adalah identifier bisnis, bukan primary key.
@@ -187,44 +187,3 @@ erDiagram
 ### Angka beranda (FR-8.8)
 
 Angka di beranda dihitung langsung dari tabel di atas (tanpa cache) dan dikirim bersama definisi, sumber tabel, dan waktu perhitungan (`generatedAt`). Contoh: tingkat kehadiran = (Hadir + Terlambat) ÷ catatan terisi pada sesi yang tidak dibatalkan, 7 hari terakhir.
-
-## R2 Akademik (13 tabel)
-
-Ditambahkan setelah keputusan D11 ([ADR 0005](adr/0005-d11-penilaian-rapor.md)): Kurikulum Merdeka, bobot komponen per mapel × tingkat × semester, nilai terlihat per penilaian yang diterbitkan, rapor disusun wali kelas dan disetujui kepala sekolah. Rincian kebutuhan di [PRD R2](prd-r2.md).
-
-```mermaid
-erDiagram
-  term ||--o{ grade_scheme_version : ""
-  grade_scheme_version ||--o{ grade_component : ""
-  teaching_assignment ||--o{ assessment : ""
-  grade_component ||--o{ assessment : ""
-  assessment ||--o{ grade_entry : ""
-  grade_entry ||--o{ grade_change : ""
-  teaching_assignment ||--o{ learning_activity : ""
-  learning_activity |o--o| assessment : "penilaian tertaut"
-  learning_activity ||--o{ submission : ""
-  submission ||--o{ submission_version : ""
-  student ||--o{ report_card : "satu per semester"
-  report_card ||--o{ report_card_subject : ""
-  report_card ||--o{ report_card_version : ""
-```
-
-| Tabel | Kolom utama | Aturan |
-| --- | --- | --- |
-| `academic_calendar_event` | `title`, `category` (`SEMESTER`/`EXAM`/`HOLIDAY`/`REPORT_DAY`/`DEADLINE`/`ACTIVITY`), `startsOn`, `endsOn`, `audience` (`ALL`/`STAFF`/`STUDENTS_GUARDIANS`/`GRADE_LEVEL`), `gradeLevelId`, `status` (`DRAFT`/`PUBLISHED`/`CANCELLED`), `cancelReason` | Selesai ≥ mulai dan tingkat wajib untuk audiens tingkat (CHECK). Audiens diperiksa saat dibaca. Ujian dan libur yang beririsan ditandai saat disimpan |
-| `grade_scheme_version` | `termId`, `subjectId`, `gradeLevelId`, `versionNo`, `passingScore` (KKTP, opsional), `status` (`DRAFT`/`PUBLISHED`/`SUPERSEDED`) | **Paling banyak satu draf dan satu terbit** per mapel × tingkat × semester (partial unique). Terbit hanya bila bobot berjumlah 100; versi terbit tidak diubah, revisi = versi baru |
-| `grade_component` | `schemeId`, `code`, `name`, `weight` | Bobot 0–100 (CHECK). Kode unik per versi |
-| `learning_outcome` | `subjectId`, `gradeLevelId`, `code`, `description`, `status` | Capaian pembelajaran; dipakai guru saat menulis deskripsi rapor |
-| `assessment` | `teachingAssignmentId`, `componentId`, `activityId`, `title`, `assessedOn`, `status` (`DRAFT`/`PUBLISHED`), `publishedAt` | Komponen harus dari skema terbit yang berlaku. Hanya penilaian terbit yang terlihat siswa/wali dan dihitung nilai akhir |
-| `grade_entry` | `assessmentId`, `studentId`, `state` (`PENDING`/`SCORED`/`MISSING`/`EXCUSED`), `score`, `feedback`, `versionNo` | Skor wajib bila `SCORED` dan kosong untuk keadaan lain; 0–100 (CHECK). Belum dinilai ≠ nol; tidak mengumpulkan dihitung 0; tidak berlaku tidak dihitung. `versionNo` mencegah timpa-menimpa |
-| `grade_change` | `gradeEntryId`, `oldState`, `oldScore`, `newState`, `newScore`, `reason`, `actorId` | Riwayat perubahan nilai yang sudah terbit; alasan wajib |
-| `learning_activity` | `teachingAssignmentId`, `kind`, `title`, `instructions`, `opensAt`, `dueAt`, `allowLate`, `allowResubmit`, `acceptsSubmissions`, `status` (`DRAFT`/`PUBLISHED`/`CLOSED`/`CANCELLED`) | Tenggat > dibuka (CHECK). Komponen nilai opsional membuat penilaian tertaut |
-| `submission` | `activityId`, `studentId`, `status` (`ON_TIME`/`LATE`), `submittedAt`, `latestVersionNo` | Satu per siswa per tugas |
-| `submission_version` | `submissionId`, `versionNo`, `text`, `storageKey`, `mimeType`, `sizeBytes`, `late`, `idempotencyKey` | Kiriman tidak ditimpa; kunci idempoten mencegah kiriman ganda saat koneksi putus. Berkas privat, unduhan tercatat |
-| `report_card` | `studentId`, `termId`, `classGroupId`, `status` (`DRAFT`/`SUBMITTED`/`RETURNED`/`PUBLISHED`), `homeroomNote`, `submittedAt`, `decidedAt`, `returnNote`, `pendingRevisionReason`, `currentVersionNo` | **Satu rapor per siswa per semester.** Diajukan wali kelas hanya bila tanpa masalah (nilai akhir lengkap, deskripsi terisi); disetujui atau dikembalikan pemegang `report-cards:approve`. Revisi setelah terbit kembali ke draf dengan alasan |
-| `report_card_subject` | `reportCardId`, `subjectId`, `highestAchievement`, `needsImprovement`, `updatedById` | Deskripsi capaian per mapel, ditulis guru mapel; terkunci setelah diajukan |
-| `report_card_version` | `reportCardId`, `versionNo`, `snapshot` (JSON), `storageKey` (PDF), `sha256`, `revisionReason`, `publishedAt`, `publishedById` | **Tidak pernah diubah.** Dibuat saat disetujui: isi rapor disalin utuh sehingga rapor terbit tetap sama walau nilai sumber berubah. Versi lama tetap dapat diunduh; setiap unduhan tercatat |
-
-**Nilai akhir.** Rata-rata nilai per komponen dikali bobot, dihitung dari penilaian terbit dengan skema terbit yang berlaku, dibulatkan sekali di akhir (setengah ke atas). Nilai akhir belum lengkap bila masih ada nilai belum dinilai atau komponen tanpa penilaian. Aturan yang sama dipakai buku nilai, portal, dan rapor.
-
-**Angka beranda R2 (E16).** Mengikuti aturan FR-8.8 (definisi, sumber, waktu hitung). Guru: kiriman belum dinilai (kiriman pada tugas bernilai yang nilainya masih belum dinilai), penilaian belum terbit, deskripsi rapor belum diisi (siswa × mapel). Wali kelas: rapor bermasalah per rombel binaan, dengan jumlah siap diajukan, diajukan, dan terbit. Kurikulum: rapor terbit dibanding siswa yang ditempatkan. Pimpinan: rapor menunggu persetujuan. Siswa dan wali melihat tugas belum dikumpulkan dengan tenggat 7 hari, nilai terbit terbaru, dan agenda 30 hari ke depan. Semester acuan: semester berjalan, atau semester terakhir yang sudah dimulai.

@@ -16,5 +16,3 @@ export * from './search.js';
 export * from './staff.js';
 export * from './calendar.js';
 export * from './grading.js';
-export * from './activities.js';
-export * from './report-cards.js';

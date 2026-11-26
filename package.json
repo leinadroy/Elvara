@@ -9,7 +9,7 @@
   ],
   "packageManager": "npm@11.21.2",
   "engines": {
-    "node": ">=22",
+    "node": "^22.22.3 || ^24.15.0 || >=26",
     "npm": ">=11"
   },
   "scripts": {

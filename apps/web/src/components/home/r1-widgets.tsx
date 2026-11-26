@@ -18,7 +18,6 @@ import { apiGet } from "@/lib/api-server";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { Fragment } from "react";
 import { Card } from "./home-dashboard";
-import { AgendaWidget, PortalR2Widgets } from "./r2-widgets";
 import { StaleNotice } from "./stale-notice";
 
 function Unavailable({ title, className = "" }: { title: string; className?: string }) {
@@ -214,7 +213,7 @@ function AcademicsWidget() {
   );
 }
 
-/** Widget R1 + R2 per peran aktif (blueprint 04: beranda berisi hal yang perlu dikerjakan hari ini). */
+/** Widget R1 per peran aktif (blueprint 04: beranda berisi hal yang perlu dikerjakan hari ini). */
 export async function RoleWidgets({ me, s }: { me: Me; s: DashboardSummary }) {
   const role = me.activeRole;
   return (
@@ -224,7 +223,6 @@ export async function RoleWidgets({ me, s }: { me: Me; s: DashboardSummary }) {
       {role === "STUDENT" && (
         <>
           <TodayClassWidget title="Pelajaran hari ini" />
-          <PortalR2Widgets />
           <AttendanceWidget title="Kehadiran saya" />
         </>
       )}
@@ -233,11 +231,9 @@ export async function RoleWidgets({ me, s }: { me: Me; s: DashboardSummary }) {
         (s.children ?? []).map((c) => (
           <Fragment key={c.studentId}>
             <TodayClassWidget studentId={c.studentId} title={`Jadwal ${c.fullName}`} />
-            <PortalR2Widgets studentId={c.studentId} name={c.fullName} />
             <AttendanceWidget studentId={c.studentId} title={`Kehadiran ${c.fullName}`} />
           </Fragment>
         ))}
-      {(role === "STUDENT" || role === "GUARDIAN") && <AgendaWidget />}
       <AnnouncementsWidget />
     </>
   );
