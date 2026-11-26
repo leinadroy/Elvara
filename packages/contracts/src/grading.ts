@@ -103,7 +103,7 @@ export const CreateAssessmentSchema = z.object({
   assessedOn: isoDate.optional(),
 });
 
-export const CreateActivitySchema = CreateAssessmentSchema.extend({
+const activityFields = {
   kind: z.enum(['ASSIGNMENT', 'QUIZ', 'EXAM', 'PRACTICE']),
   instructions: z.string().trim().max(10000),
   opensAt: z.iso.datetime({ offset: true }),
@@ -111,9 +111,20 @@ export const CreateActivitySchema = CreateAssessmentSchema.extend({
   allowLate: z.boolean().default(false),
   allowResubmit: z.boolean().default(true),
   acceptsSubmissions: z.boolean().default(true),
-}).refine((input) => Date.parse(input.opensAt) < Date.parse(input.dueAt), {
-  path: ['dueAt'], message: 'Tenggat harus setelah waktu buka.',
-});
+};
+const dueAfterOpen = { path: ['dueAt'], message: 'Tenggat harus setelah waktu buka.' };
+
+/** Kegiatan baru. Komponen nilai opsional: tanpa komponen = kegiatan tanpa nilai (mis. latihan). */
+export const CreateActivitySchema = CreateAssessmentSchema.extend({
+  componentId: z.uuid({ error: 'Pilih komponen nilai.' }).optional(),
+  ...activityFields,
+}).refine((input) => Date.parse(input.opensAt) < Date.parse(input.dueAt), dueAfterOpen);
+
+/** Mengubah kegiatan draf/terbit/ditutup. Tautan komponen nilai tidak berubah. */
+export const UpdateActivitySchema = z.object({
+  title: CreateAssessmentSchema.shape.title,
+  ...activityFields,
+}).refine((input) => Date.parse(input.opensAt) < Date.parse(input.dueAt), dueAfterOpen);
 
 export const ActivityStatusSchema = z.object({ status: z.enum(['PUBLISHED', 'CLOSED', 'CANCELLED']) });
 export const SubmitActivitySchema = z.object({ text: z.string().trim().max(20000).optional(), idempotencyKey: z.uuid() });

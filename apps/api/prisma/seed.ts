@@ -5,8 +5,14 @@
  * Akun contoh (kata sandi sama untuk semua, lihat DEV_PASSWORD):
  *   admin@smartschool.test   — Admin sekolah
  *   kepsek@smartschool.test  — Manajemen
- *   guru@smartschool.test    — Guru
+ *   guru@smartschool.test    — Guru (wali kelas 7A, Matematika)
+ *   kurikulum@smartschool.test — Kurikulum (juga guru IPA)
+ *   staf@smartschool.test    — Staf tata usaha
+ *   siswa@smartschool.test   — Siswa (Andi Pratama, 7A)
  *   wali@smartschool.test    — Orang tua/wali dari Andi Pratama (terverifikasi)
+ *
+ * Contoh R2 di 7A: nilai lengkap MTK/BIN/IPA, satu penilaian draf, tugas bernilai + latihan tanpa nilai,
+ * rapor Andi menunggu persetujuan, rapor Bunga siap diajukan, rapor Citra masih kurang deskripsi IPA.
  */
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -244,6 +250,110 @@ async function main() {
       create: { schoolId: school.id, subjectId: subjects[subject]!, gradeLevelId: grades['7']!, code, description },
       update: {},
     });
+  }
+
+  // ───────────── R2 contoh: penilaian, tugas, rapor 7A ─────────────
+  // Idempoten per bagian: aman diulang dan melengkapi database yang sudah berisi sebagian data contoh.
+  const userOf = async (email: string) => (await prisma.user.findUniqueOrThrow({ where: { email } })).id;
+  const teacherUser: Record<string, string> = { MTK: await userOf('guru@smartschool.test'), BIN: await userOf('kepsek@smartschool.test'), IPA: await userOf('kurikulum@smartschool.test') };
+  const sevenA = studentIds.slice(0, 3); // Andi, Bunga, Citra
+  const today = todayIn(school.timezone);
+  // Nilai per mapel × komponen untuk Andi, Bunga, Citra. 'MISSING' = tidak mengumpulkan (dihitung 0).
+  const scores: Record<string, Record<string, (number | 'MISSING')[]>> = {
+    MTK: { FORMATIF: [85, 'MISSING', 78], STS: [80, 72, 90], SAS: [82, 70, 88] },
+    BIN: { FORMATIF: [88, 80, 76], STS: [84, 78, 80], SAS: [86, 74, 82] },
+    IPA: { FORMATIF: [79, 83, 90], STS: [76, 81, 85], SAS: [80, 77, 92] },
+  };
+  const titles: Record<string, [string, number]> = { FORMATIF: ['Tugas 1', -60], STS: ['Sumatif tengah semester', -30], SAS: ['Sumatif akhir semester', -2] };
+  for (const code of ['MTK', 'BIN', 'IPA']) {
+    const ta = await prisma.teachingAssignment.findFirst({ where: { termId: term.id, classGroupId: classes['7A']!, subjectId: subjects[code]! } });
+    const scheme = await prisma.gradeSchemeVersion.findFirst({ where: { termId: term.id, subjectId: subjects[code]!, gradeLevelId: grades['7']!, status: 'PUBLISHED' }, include: { components: true } });
+    if (!ta || !scheme) continue;
+    for (const component of scheme.components) {
+      if (await prisma.assessment.findFirst({ where: { teachingAssignmentId: ta.id, componentId: component.id, status: 'PUBLISHED' } })) continue;
+      const [title, offset] = titles[component.code]!;
+      await prisma.assessment.create({
+        data: {
+          schoolId: school.id, teachingAssignmentId: ta.id, componentId: component.id, title, assessedOn: d(addDays(today, offset)),
+          status: 'PUBLISHED', publishedAt: new Date(), publishedById: teacherUser[code]!, createdById: teacherUser[code]!,
+          entries: {
+            create: sevenA.map((studentId, i) => {
+              const v = scores[code]![component.code]![i]!;
+              return v === 'MISSING' ? { studentId, state: 'MISSING' as const, updatedById: teacherUser[code]! } : { studentId, state: 'SCORED' as const, score: v, updatedById: teacherUser[code]! };
+            }),
+          },
+        },
+      });
+    }
+    // Satu penilaian draf di Matematika: belum terlihat siswa dan wali.
+    if (code === 'MTK' && !(await prisma.assessment.findFirst({ where: { teachingAssignmentId: ta.id, status: 'DRAFT', activityId: null } }))) {
+      const formatif = scheme.components.find((c) => c.code === 'FORMATIF')!;
+      await prisma.assessment.create({
+        data: {
+          schoolId: school.id, teachingAssignmentId: ta.id, componentId: formatif.id, title: 'Kuis 2: diagram batang', assessedOn: d(addDays(today, -3)), createdById: teacherUser.MTK!,
+          entries: { create: [{ studentId: sevenA[0]!, state: 'SCORED', score: 88, updatedById: teacherUser.MTK! }, { studentId: sevenA[2]!, state: 'SCORED', score: 70, updatedById: teacherUser.MTK! }] },
+        },
+      });
+    }
+    // Tugas Matematika: satu bernilai (tertaut ke formatif, Bunga sudah mengumpulkan) dan satu latihan tanpa nilai.
+    if (code === 'MTK') {
+      const formatif = scheme.components.find((c) => c.code === 'FORMATIF')!;
+      if (!(await prisma.learningActivity.findFirst({ where: { teachingAssignmentId: ta.id, assessment: { isNot: null } } }))) {
+        const act = await prisma.learningActivity.create({
+          data: {
+            schoolId: school.id, teachingAssignmentId: ta.id, kind: 'ASSIGNMENT', title: 'Tugas 3: tabel frekuensi',
+            instructions: 'Buat tabel frekuensi dari data tinggi badan teman sekelas (minimal 15 data), lalu jelaskan kelas dengan frekuensi terbanyak.',
+            opensAt: new Date(Date.now() - 86_400_000), dueAt: new Date(Date.now() + 3 * 86_400_000), allowLate: true, status: 'PUBLISHED', publishedAt: new Date(), createdById: teacherUser.MTK!,
+          },
+        });
+        await prisma.assessment.create({ data: { schoolId: school.id, teachingAssignmentId: ta.id, componentId: formatif.id, activityId: act.id, title: act.title, createdById: teacherUser.MTK! } });
+        await prisma.submission.create({
+          data: {
+            activityId: act.id, studentId: sevenA[1]!, status: 'ON_TIME', submittedAt: new Date(), latestVersionNo: 1,
+            versions: { create: { versionNo: 1, text: 'Kelas 150–154 cm memiliki frekuensi terbanyak (6 siswa).', late: false, idempotencyKey: '00000000-0000-4000-8000-0000000000b1' } },
+          },
+        });
+      }
+      if (!(await prisma.learningActivity.findFirst({ where: { teachingAssignmentId: ta.id, assessment: { is: null } } }))) {
+        await prisma.learningActivity.create({
+          data: {
+            schoolId: school.id, teachingAssignmentId: ta.id, kind: 'PRACTICE', title: 'Latihan soal persamaan linear',
+            instructions: 'Kerjakan 10 soal latihan di buku paket halaman 42. Latihan ini tidak dinilai; gunakan untuk persiapan kuis.',
+            opensAt: new Date(Date.now() - 3_600_000), dueAt: new Date(Date.now() + 5 * 86_400_000), status: 'PUBLISHED', publishedAt: new Date(), createdById: teacherUser.MTK!,
+          },
+        });
+      }
+    }
+  }
+
+  // Rapor 7A: Andi lengkap dan sudah diajukan (siap disetujui kepala sekolah), Bunga lengkap (siap diajukan
+  // wali kelas), Citra masih kurang deskripsi IPA (tampil sebagai kekurangan).
+  const descriptions: Record<string, [string, string]> = {
+    MTK: ['Menyelesaikan persamaan linear satu variabel dengan tepat.', 'Menyajikan data dalam diagram batang.'],
+    BIN: ['Menulis teks deskripsi dengan struktur yang runtut.', 'Ketepatan ejaan dan tanda baca.'],
+    IPA: ['Mengklasifikasikan makhluk hidup berdasarkan ciri-cirinya.', 'Menjelaskan hasil pengamatan secara tertulis.'],
+  };
+  for (const [i, studentId] of sevenA.entries()) {
+    const card = await prisma.reportCard.upsert({
+      where: { studentId_termId: { studentId, termId: term.id } },
+      create: { schoolId: school.id, studentId, termId: term.id, classGroupId: classes['7A']! },
+      update: {},
+    });
+    for (const code of ['MTK', 'BIN', 'IPA']) {
+      if (i === 2 && code === 'IPA') continue;
+      const [highestAchievement, needsImprovement] = descriptions[code]!;
+      await prisma.reportCardSubject.upsert({
+        where: { reportCardId_subjectId: { reportCardId: card.id, subjectId: subjects[code]! } },
+        create: { reportCardId: card.id, subjectId: subjects[code]!, highestAchievement, needsImprovement, updatedById: teacherUser[code]! },
+        update: {},
+      });
+    }
+    if (i === 0 && card.status === 'DRAFT' && !card.submittedAt) {
+      await prisma.reportCard.update({
+        where: { id: card.id },
+        data: { status: 'SUBMITTED', submittedAt: new Date(), submittedById: teacherUser.MTK!, homeroomNote: card.homeroomNote ?? 'Aktif bertanya dan membantu teman. Pertahankan semangat belajar.' },
+      });
+    }
   }
 
   // Agenda akademik contoh (R2 E10): terbit, kecuali satu draf.

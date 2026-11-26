@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { Body, Controller, Get, HttpCode, NotFoundException, Param, Post, Query, Req, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, NotFoundException, Param, Post, Put, Query, Req, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ActivityStatusSchema, CreateActivitySchema, PortalGradesQuerySchema, SubmitActivitySchema, UuidParamSchema } from '@smart-school/contracts';
+import { ActivityStatusSchema, CreateActivitySchema, PortalGradesQuerySchema, SubmitActivitySchema, UpdateActivitySchema, UuidParamSchema } from '@smart-school/contracts';
 import type { Request, Response } from 'express';
 import type { z } from 'zod';
 import { ScopeService } from '../academics/scope.service.js';
@@ -15,16 +15,64 @@ import { requestMeta } from '../common/request-meta.js';
 import { todayIn } from '../common/school-time.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AssessmentsService } from './assessments.service.js';
+import { AuditService } from '../audit/audit.service.js';
+import { fromDbDate } from '../common/dates.js';
 
 @Controller('activities')
 export class ActivitiesController {
-  constructor(private readonly prisma: PrismaService, private readonly assessments: AssessmentsService, private readonly scope: ScopeService, private readonly storage: StorageService) {}
+  constructor(private readonly prisma: PrismaService, private readonly assessments: AssessmentsService, private readonly scope: ScopeService, private readonly storage: StorageService, private readonly audit: AuditService) {}
 
   @Post()
   @RequireActiveRole('TEACHER')
   async create(@CurrentAuth() auth: AuthContext, @Body({ schema: CreateActivitySchema }) input: z.infer<typeof CreateActivitySchema>, @Req() req: Request) {
-    const assessment = await this.assessments.create(auth, input, requestMeta(req), input);
-    return this.prisma.learningActivity.findFirstOrThrow({ where: { assessment: { id: assessment.id } }, include: { assessment: { select: { id: true } } } });
+    if (input.componentId) {
+      const assessment = await this.assessments.create(auth, { ...input, componentId: input.componentId }, requestMeta(req), input);
+      return this.prisma.learningActivity.findFirstOrThrow({ where: { assessment: { id: assessment.id } }, include: { assessment: { select: { id: true } } } });
+    }
+    // Kegiatan tanpa nilai (mis. latihan): tidak membuat penilaian dan tidak masuk nilai akhir.
+    const assignment = auth.personId
+      ? await this.prisma.teachingAssignment.findFirst({ where: { id: input.teachingAssignmentId, schoolId: auth.schoolId, employee: { personId: auth.personId } }, select: { id: true } })
+      : null;
+    if (!assignment) throw new NotFoundException('Penugasan mengajar tidak ditemukan.');
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.learningActivity.create({
+        data: {
+          schoolId: auth.schoolId, teachingAssignmentId: assignment.id, title: input.title, kind: input.kind, instructions: input.instructions,
+          opensAt: new Date(input.opensAt), dueAt: new Date(input.dueAt), allowLate: input.allowLate, allowResubmit: input.allowResubmit,
+          acceptsSubmissions: input.acceptsSubmissions, createdById: auth.userId,
+        },
+        include: { assessment: { select: { id: true } } },
+      });
+      await this.audit.record({ schoolId: auth.schoolId, actorUserId: auth.userId, action: 'activity.create', entityType: 'learning_activity', entityId: created.id, requestId: requestMeta(req).requestId, metadata: { teachingAssignmentId: assignment.id, graded: false } }, tx);
+      return created;
+    });
+  }
+
+  /** Mengubah kegiatan yang belum dibatalkan. Judul penilaian tertaut yang masih draf ikut diperbarui. */
+  @Put(':id')
+  @HttpCode(204)
+  @RequireActiveRole('TEACHER')
+  async update(@CurrentAuth() auth: AuthContext, @Param('id', { schema: UuidParamSchema }) id: string, @Body({ schema: UpdateActivitySchema }) input: z.infer<typeof UpdateActivitySchema>, @Req() req: Request) {
+    if (!auth.personId) throw new NotFoundException('Kegiatan tidak ditemukan.');
+    const where = { id, schoolId: auth.schoolId, teachingAssignment: { employee: { personId: auth.personId } } };
+    const activity = await this.prisma.learningActivity.findFirst({ where, select: { status: true, title: true, dueAt: true, assessment: { select: { id: true, status: true } } } });
+    if (!activity) throw new NotFoundException('Kegiatan tidak ditemukan.');
+    if (activity.status === 'CANCELLED') throw conflict('Kegiatan yang dibatalkan tidak dapat diubah.');
+    await this.prisma.$transaction(async (tx) => {
+      const result = await tx.learningActivity.updateMany({
+        where: { ...where, status: activity.status },
+        data: {
+          title: input.title, kind: input.kind, instructions: input.instructions, opensAt: new Date(input.opensAt), dueAt: new Date(input.dueAt),
+          allowLate: input.allowLate, allowResubmit: input.allowResubmit, acceptsSubmissions: input.acceptsSubmissions,
+        },
+      });
+      if (!result.count) throw conflict('Status kegiatan sudah berubah. Muat ulang halaman.');
+      if (activity.assessment?.status === 'DRAFT' && activity.title !== input.title) await tx.assessment.update({ where: { id: activity.assessment.id }, data: { title: input.title } });
+      await this.audit.record({
+        schoolId: auth.schoolId, actorUserId: auth.userId, action: 'activity.update', entityType: 'learning_activity', entityId: id, requestId: requestMeta(req).requestId,
+        metadata: { status: activity.status, oldDueAt: activity.dueAt.toISOString(), newDueAt: new Date(input.dueAt).toISOString() },
+      }, tx);
+    });
   }
 
   @Get('teaching')
@@ -75,6 +123,7 @@ export class ActivitiesController {
       where: { id, schoolId: auth.schoolId, teachingAssignment: { employee: { personId: auth.personId } } },
       select: {
         assessment: { select: { id: true } },
+        teachingAssignment: { select: { classGroupId: true, term: { select: { startDate: true, endDate: true } } } },
         submissions: {
           select: {
             studentId: true, status: true, submittedAt: true,
@@ -85,7 +134,19 @@ export class ActivitiesController {
       },
     });
     if (!activity) throw new NotFoundException('Kegiatan tidak ditemukan.');
-    return activity;
+    // Peserta rombel (hari ini, dibatasi ke rentang semester) agar yang belum mengumpulkan tetap terlihat,
+    // termasuk pada kegiatan tanpa nilai yang tidak punya lembar nilai.
+    const { teachingAssignment, ...rest } = activity;
+    const today = await this.schoolDate(auth.schoolId);
+    const from = fromDbDate(teachingAssignment.term.startDate);
+    const to = fromDbDate(teachingAssignment.term.endDate);
+    const date = today < from ? from : today > to ? to : today;
+    const roster = await this.prisma.enrollment.findMany({
+      where: { classGroupId: teachingAssignment.classGroupId, ...activeOn(date) },
+      select: { studentId: true, student: { select: { nis: true, person: { select: { fullName: true } } } } },
+      orderBy: { student: { person: { fullName: 'asc' } } },
+    });
+    return { ...rest, roster: roster.map((r) => ({ studentId: r.studentId, nis: r.student.nis, fullName: r.student.person.fullName })) };
   }
 
   @Get(':id/submissions/:versionId/file')

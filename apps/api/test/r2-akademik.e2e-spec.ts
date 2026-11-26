@@ -173,6 +173,45 @@ describe('R2 penilaian draf (E13 tahap awal)', () => {
     await teacher.post(api(`/activities/${activity.id}/status`)).send({ status: 'CLOSED' }).expect(204);
     await student.post(path).send({ ...input, idempotencyKey: crypto.randomUUID() }).expect(409);
   });
+  it('kegiatan tanpa nilai dan pengubahan kegiatan', async () => {
+    const a = await setupClass(app, fx, s, '7A', [0, 2]);
+    const scheme = await a.cur.post(api('/grade-schemes')).send({ termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId, components: [{ code: 'TUGAS', name: 'Tugas', weight: 100 }] }).expect(201);
+    await a.cur.post(api(`/grade-schemes/${scheme.body.id}/publish`)).expect(204);
+    const componentId = (await prisma.gradeComponent.findFirstOrThrow({ where: { schemeVersionId: scheme.body.id } })).id;
+    const teacher = await loginAs(app, fx.emails.teacher);
+    const student = await loginAs(app, s.studentEmail);
+    const window = { opensAt: new Date(Date.now() - 60_000).toISOString(), dueAt: new Date(Date.now() + 86_400_000).toISOString() };
+
+    // Kegiatan tanpa komponen: tidak membuat penilaian, tidak masuk lembar nilai.
+    const { body: practice } = await teacher.post(api('/activities')).send({ teachingAssignmentId: a.ta, kind: 'PRACTICE', title: 'Latihan bebas', instructions: '', ...window }).expect(201);
+    expect(practice.assessment).toBeNull();
+    expect((await teacher.get(api(`/assessments?teachingAssignmentId=${a.ta}`)).expect(200)).body).toEqual([]);
+    const other = await loginAs(app, s.homeroomEmail);
+    await other.post(api('/activities')).send({ teachingAssignmentId: a.ta, kind: 'PRACTICE', title: 'Bukan kelas saya', instructions: '', ...window }).expect(404);
+    await teacher.post(api(`/activities/${practice.id}/status`)).send({ status: 'PUBLISHED' }).expect(204);
+    const path = api(`/activities/${practice.id}/submissions`);
+    await student.post(path).send({ text: 'Sudah dikerjakan', idempotencyKey: crypto.randomUUID() }).expect(200);
+    const review = await teacher.get(path).expect(200);
+    expect(review.body).toMatchObject({ assessment: null, submissions: [expect.objectContaining({ studentId: fx.studentIds[2] })] });
+    expect(review.body.roster.map((r: { studentId: string }) => r.studentId).sort()).toEqual([fx.studentIds[0], fx.studentIds[2]].sort());
+    // Kiriman pada kegiatan tanpa nilai tidak dihitung "belum dinilai" di beranda guru.
+    expect((await teacher.get(api('/report-cards/teacher-dashboard')).expect(200)).body).toMatchObject({ ungraded: 0 });
+
+    // Ubah kegiatan bernilai: judul penilaian draf tertaut ikut berubah; tenggat diperpanjang tercatat.
+    const { body: graded } = await teacher.post(api('/activities')).send({ teachingAssignmentId: a.ta, componentId, kind: 'ASSIGNMENT', title: 'Tugas awal', instructions: 'A', ...window }).expect(201);
+    const later = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    const update = { title: 'Tugas bab 2', kind: 'QUIZ', instructions: 'B', opensAt: window.opensAt, dueAt: later, allowLate: true, allowResubmit: false, acceptsSubmissions: true };
+    await teacher.put(api(`/activities/${graded.id}`)).send({ ...update, dueAt: window.opensAt }).expect(422);
+    await other.put(api(`/activities/${graded.id}`)).send(update).expect(404);
+    await student.put(api(`/activities/${graded.id}`)).send(update).expect(403);
+    await teacher.put(api(`/activities/${graded.id}`)).send(update).expect(204);
+    const saved = (await teacher.get(api('/activities/teaching')).expect(200)).body.find((x: { id: string }) => x.id === graded.id);
+    expect(saved).toMatchObject({ title: 'Tugas bab 2', kind: 'QUIZ', instructions: 'B', allowLate: true, allowResubmit: false, dueAt: later });
+    expect((await prisma.assessment.findUniqueOrThrow({ where: { id: graded.assessment.id } })).title).toBe('Tugas bab 2');
+    expect(await prisma.auditEvent.count({ where: { action: 'activity.update', entityId: graded.id } })).toBe(1);
+    await teacher.post(api(`/activities/${graded.id}/status`)).send({ status: 'CANCELLED' }).expect(204);
+    await teacher.put(api(`/activities/${graded.id}`)).send(update).expect(409);
+  });
   it('koreksi nilai terbit wajib beralasan, berversi, dan tercatat', async () => {
     const a = await setupClass(app, fx, s, '7A', [2]);
     const scheme = await a.cur.post(api('/grade-schemes')).send({ termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 100 }] }).expect(201);

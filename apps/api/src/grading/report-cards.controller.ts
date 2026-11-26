@@ -60,7 +60,7 @@ export class ReportCardsController {
     const [drafts, activities, descriptions, options] = await Promise.all([
       this.prisma.assessment.count({ where: { schoolId: auth.schoolId, teachingAssignmentId, status: 'DRAFT', OR: [{ activityId: null }, { activity: { status: { not: 'CANCELLED' } } }] } }),
       this.prisma.learningActivity.findMany({
-        where: { schoolId: auth.schoolId, teachingAssignmentId, status: { in: ['PUBLISHED', 'CLOSED'] }, submissions: { some: {} } },
+        where: { schoolId: auth.schoolId, teachingAssignmentId, status: { in: ['PUBLISHED', 'CLOSED'] }, submissions: { some: {} }, assessment: { isNot: null } },
         select: { submissions: { select: { studentId: true } }, assessment: { select: { entries: { where: { state: { not: 'PENDING' } }, select: { studentId: true } } } } },
       }),
       Promise.all(assignments.map(({ id }) => this.descriptions(auth, { teachingAssignmentId: id }))),
