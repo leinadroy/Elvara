@@ -319,6 +319,18 @@ describe('R2 penilaian draf (E13 tahap awal)', () => {
       expect.objectContaining({ link: `/guardian/reports?studentId=${studentId}` }),
       expect.objectContaining({ link: `/guardian/reports?studentId=${studentId}` }),
     ]);
+    // §4: kurikulum (grading:read) membaca progres dan isi rapor semua rombel, termasuk unduhan versi terbit.
+    expect((await a.cur.get(api('/report-cards/progress')).expect(200)).body.groups).toContainEqual(expect.objectContaining({ id: a.cls, counts: expect.objectContaining({ PUBLISHED: 1 }) }));
+    await homeroom.get(api('/report-cards/progress')).expect(403);
+    const classView = await a.cur.get(api(`/report-cards/class-view?classGroupId=${a.cls}&termId=${s.termId}`)).expect(200);
+    const readerRow = classView.body.students.find((row: { studentId: string }) => row.studentId === studentId);
+    expect(readerRow.versions.map((v: { versionNo: number }) => v.versionNo)).toEqual([2, 1]);
+    await a.cur.get(api(`/report-cards/versions/${readerRow.versions[0].id}/file`)).expect('Content-Type', /application\/pdf/).expect(200);
+    await homeroom.get(api(`/report-cards/versions/${readerRow.versions[0].id}/file`)).expect(403);
+    // FR-15.3: guru melihat capaian pembelajaran mapel × tingkat penugasannya.
+    await a.cur.post(api('/learning-outcomes')).send({ subjectId: s.mathId, gradeLevelId: s.gradeId, code: 'MTK-7.1', description: 'Menyelesaikan persamaan linear satu variabel.' }).expect(201);
+    expect((await teacher.get(api(`/report-cards/subject-outcomes?teachingAssignmentId=${a.ta}`)).expect(200)).body).toEqual([expect.objectContaining({ code: 'MTK-7.1' })]);
+    await homeroom.get(api(`/report-cards/subject-outcomes?teachingAssignmentId=${a.ta}`)).expect(404);
     expect((await other.get(api('/me/grades')).expect(200)).body.items).toEqual([expect.objectContaining({ state: 'EXCUSED', score: null })]);
     expect((await guardian.get(api(`/me/grades?studentId=${studentId}`)).expect(200)).body.items).toHaveLength(1);
     await prisma.studentGuardian.updateMany({ where: { studentId }, data: { canViewAcademic: false } });
@@ -388,6 +400,11 @@ describe('R2 penilaian draf (E13 tahap awal)', () => {
     const pending = await teacher.put(rowPath).send({ state: 'PENDING', score: null, feedback: null, versionNo: 3 }).expect(200);
     expect(pending.body).toMatchObject({ state: 'PENDING', score: null, versionNo: 4 });
     await teacher.put(api(`/assessments/${assessmentId}/grades/${fx.studentIds[1]}`)).send({ state: 'SCORED', score: 80, feedback: null, versionNo: 0 }).expect(404);
+    const wrongRows = await teacher.put(api(`/assessments/${assessmentId}/grades`)).send({ rows: [
+      { studentId: fx.studentIds[1], state: 'SCORED', score: 80, feedback: null, versionNo: 0 },
+      { studentId: '00000000-0000-4000-8000-000000000000', state: 'SCORED', score: 70, feedback: null, versionNo: 0 },
+    ] }).expect(422);
+    expect(wrongRows.body.fieldErrors).toEqual({ 'rows.0.studentId': [expect.stringContaining('Baris 1')], 'rows.1.studentId': [expect.stringContaining('Baris 2')] });
     const other = await loginAs(app, s.homeroomEmail);
     await other.get(sheetPath).expect(404);
     await other.put(rowPath).send({ state: 'SCORED', score: 80, feedback: null, versionNo: 4 }).expect(404);
@@ -410,18 +427,15 @@ describe('R2 penilaian draf (E13 tahap awal)', () => {
     }));
   });
 
-  it('hanya menerbitkan penilaian setelah seluruh siswa selesai dinilai', async () => {
+  it('penilaian boleh terbit dengan nilai kosong; nilai akhir berstatus belum lengkap sampai diisi lewat koreksi', async () => {
     const a = await setupClass(app, fx, s, '7A', [0, 2, 3]);
-    const scheme = await a.cur.post(api('/grade-schemes')).send({ termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 100 }] }).expect(201);
+    const scheme = await a.cur.post(api('/grade-schemes')).send({ termId: s.termId, subjectId: s.mathId, gradeLevelId: s.gradeId, passingScore: 75, components: [{ code: 'FORMATIF', name: 'Formatif', weight: 100 }] }).expect(201);
     await a.cur.post(api(`/grade-schemes/${scheme.body.id}/publish`)).expect(204);
     const componentId = (await prisma.gradeComponent.findFirstOrThrow({ where: { schemeVersionId: scheme.body.id } })).id;
     const teacher = await loginAs(app, fx.emails.teacher);
     const id = (await teacher.post(api('/assessments')).send({ teachingAssignmentId: a.ta, componentId, title: 'Sumatif bab 1' }).expect(201)).body.id as string;
     const publishPath = api(`/assessments/${id}/publish`);
-    await teacher.post(publishPath).expect(409);
     await teacher.put(api(`/assessments/${id}/grades/${fx.studentIds[0]}`)).send({ state: 'SCORED', score: 0, feedback: null, versionNo: 0 }).expect(200);
-    await teacher.post(publishPath).expect(409);
-    await teacher.put(api(`/assessments/${id}/grades/${fx.studentIds[2]}`)).send({ state: 'MISSING', score: null, feedback: null, versionNo: 0 }).expect(200);
     await teacher.put(api(`/assessments/${id}/grades/${fx.studentIds[3]}`)).send({ state: 'SCORED', score: 90, feedback: null, versionNo: 0 }).expect(200);
     await prisma.enrollment.updateMany({
       where: { classGroupId: a.cls, studentId: fx.studentIds[3] },
@@ -441,6 +455,11 @@ describe('R2 penilaian draf (E13 tahap awal)', () => {
     const published = await teacher.get(api(`/assessments/${id}/grades`)).expect(200);
     expect(published.body.assessment).toMatchObject({ status: 'PUBLISHED', assessedOn: today() });
     expect(published.body.students).toHaveLength(2);
+    expect(published.body.students).toContainEqual(expect.objectContaining({ studentId: fx.studentIds[2], state: 'PENDING', score: null, versionNo: 1 }));
+    const student = await loginAs(app, s.studentEmail);
+    expect((await student.get(api('/me/grades')).expect(200)).body.summaries).toEqual([expect.objectContaining({ status: 'INCOMPLETE', finalScore: null, needsFollowUp: null })]);
+    await teacher.put(api(`/assessments/${id}/grades/${fx.studentIds[2]}/correction`)).send({ state: 'SCORED', score: 60, feedback: null, reason: 'Nilai ujian susulan diisi.', versionNo: 1 }).expect(200);
+    expect((await student.get(api('/me/grades')).expect(200)).body.summaries).toEqual([expect.objectContaining({ status: 'COMPLETE', finalScore: 60, passingScore: 75, needsFollowUp: true })]);
     const moved = await loginAs(app, s.otherStudentEmail);
     expect((await moved.get(api('/me/grades')).expect(200)).body.items).toEqual([]);
     await teacher.post(publishPath).expect(409);
@@ -449,7 +468,6 @@ describe('R2 penilaian draf (E13 tahap awal)', () => {
     expect(sheet.body.assessment.status).toBe('PUBLISHED');
     const other = await loginAs(app, s.homeroomEmail);
     await other.post(publishPath).expect(404);
-    const student = await loginAs(app, s.studentEmail);
     await student.post(publishPath).expect(403);
     expect(await prisma.auditEvent.count({ where: { action: 'assessment.publish', entityId: id } })).toBe(1);
   });

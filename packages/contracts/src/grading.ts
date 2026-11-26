@@ -269,5 +269,9 @@ export interface PortalGradesView {
     versionNo: number;
     finalScore: number | null;
     status: GradeAggregateStatus;
+    /** KKTP skema (opsional). */
+    passingScore: number | null;
+    /** Nilai akhir di bawah KKTP: ditandai "perlu tindak lanjut"; null bila belum lengkap atau tanpa KKTP. */
+    needsFollowUp: boolean | null;
   }[];
 }

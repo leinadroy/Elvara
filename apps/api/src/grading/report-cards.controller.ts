@@ -84,13 +84,11 @@ export class ReportCardsController {
     };
   }
 
-  @Get('curriculum-dashboard')
-  @RequireActiveRole('CURRICULUM')
-  async curriculumDashboard(@CurrentAuth() auth: AuthContext) {
+  /** Status rapor peserta aktif per rombel pada semester berjalan (FR-16.3, §4 grading:read). */
+  private async progress(auth: AuthContext) {
     const { term, date } = await this.currentTerm(auth);
     if (!term) return null;
-    const [schemes, groups, reports] = await Promise.all([
-      this.schemes.list(auth, term.id),
+    const [groups, reports] = await Promise.all([
       this.prisma.classGroup.findMany({
         where: { schoolId: auth.schoolId, academicYearId: term.academicYearId },
         select: { id: true, code: true, enrollments: { where: activeOn(date), select: { studentId: true } } },
@@ -104,7 +102,6 @@ export class ReportCardsController {
     const byStudent = new Map(reports.map((report) => [report.studentId, report]));
     return {
       term, generatedAt: new Date().toISOString(),
-      missingSchemes: schemes.filter((row) => row.taught && !row.published).length,
       groups: groups.map((group) => {
         const studentIds = [...new Set(group.enrollments.map((row) => row.studentId))];
         const counts = { DRAFT: 0, RETURNED: 0, SUBMITTED: 0, PUBLISHED: 0, NOT_STARTED: 0 };
@@ -115,6 +112,57 @@ export class ReportCardsController {
         return { id: group.id, code: group.code, total: studentIds.length, counts };
       }),
     };
+  }
+
+  @Get('curriculum-dashboard')
+  @RequireActiveRole('CURRICULUM')
+  async curriculumDashboard(@CurrentAuth() auth: AuthContext) {
+    const progress = await this.progress(auth);
+    if (!progress) return null;
+    const schemes = await this.schemes.list(auth, progress.term.id);
+    return { ...progress, missingSchemes: schemes.filter((row) => row.taught && !row.published).length };
+  }
+
+  /** §4: kurikulum, pimpinan, dan admin (grading:read) membaca progres rapor semua rombel. */
+  @Get('progress')
+  @RequirePermissions('grading:read')
+  readProgress(@CurrentAuth() auth: AuthContext) {
+    return this.progress(auth);
+  }
+
+  /** §4: isi rapor satu rombel untuk pembaca (grading:read), beserta versi terbit tiap siswa. Hanya baca. */
+  @Get('class-view')
+  @RequirePermissions('grading:read')
+  async classView(@CurrentAuth() auth: AuthContext, @Query({ schema: PreviewQuery }) query: z.infer<typeof PreviewQuery>) {
+    const preview = await this.buildPreview(auth, query, this.prisma, undefined, true);
+    const versions = await this.prisma.reportCardVersion.findMany({
+      where: { reportCard: { schoolId: auth.schoolId, classGroupId: query.classGroupId, termId: query.termId } },
+      select: { id: true, versionNo: true, publishedAt: true, revisionReason: true, reportCard: { select: { studentId: true } } },
+      orderBy: { versionNo: 'desc' },
+    });
+    const { timezone: _tz, ...rest } = preview;
+    return {
+      ...rest,
+      students: preview.students.map((student) => ({
+        ...student,
+        versions: versions.filter((v) => v.reportCard.studentId === student.studentId).map(({ reportCard: _r, ...v }) => v),
+      })),
+    };
+  }
+
+  /** Unduh PDF versi terbit untuk pembaca rapor (grading:read). Setiap unduhan tercatat. */
+  @Get('versions/:versionId/file')
+  @RequirePermissions('grading:read')
+  async readerDownload(@CurrentAuth() auth: AuthContext, @Param('versionId', { schema: UuidParamSchema }) id: string, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const version = await this.prisma.reportCardVersion.findFirst({
+      where: { id, reportCard: { schoolId: auth.schoolId } },
+      select: { reportCardId: true, versionNo: true, storageKey: true, reportCard: { select: { student: { select: { nis: true } } } } },
+    });
+    if (!version) throw new NotFoundException('Rapor terbit tidak ditemukan.');
+    await this.audit.record({ schoolId: auth.schoolId, actorUserId: auth.userId, action: 'report_card.download', entityType: 'report_card', entityId: version.reportCardId, requestId: requestMeta(req).requestId, metadata: { versionNo: version.versionNo } });
+    const file = await this.storage.open(version.storageKey);
+    res.set({ 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
+    return new StreamableFile(file.stream, { type: 'application/pdf', length: file.size, disposition: `attachment; filename="rapor-${version.reportCard.student.nis}-v${version.versionNo}.pdf"` });
   }
 
   @Get('portal')
@@ -302,6 +350,23 @@ export class ReportCardsController {
         editable: !report || (ownClass && (report.status === 'DRAFT' || report.status === 'RETURNED')),
         description: ownClass ? report.subjects[0] ?? null : null,
       };
+    });
+  }
+
+  /** FR-15.3: capaian pembelajaran aktif mapel × tingkat penugasan, untuk dipilih saat menulis deskripsi rapor. */
+  @Get('subject-outcomes')
+  @RequireActiveRole('TEACHER')
+  async outcomes(@CurrentAuth() auth: AuthContext, @Query({ schema: DescriptionInput.pick({ teachingAssignmentId: true }) }) query: { teachingAssignmentId: string }) {
+    if (!auth.personId) throw new NotFoundException('Penugasan tidak ditemukan.');
+    const assignment = await this.prisma.teachingAssignment.findFirst({
+      where: { id: query.teachingAssignmentId, schoolId: auth.schoolId, employee: { personId: auth.personId } },
+      select: { subjectId: true, classGroup: { select: { gradeLevelId: true } } },
+    });
+    if (!assignment) throw new NotFoundException('Penugasan tidak ditemukan.');
+    return this.prisma.learningOutcome.findMany({
+      where: { schoolId: auth.schoolId, subjectId: assignment.subjectId, gradeLevelId: assignment.classGroup.gradeLevelId, status: 'ACTIVE' },
+      select: { id: true, code: true, description: true },
+      orderBy: { code: 'asc' },
     });
   }
 

@@ -47,6 +47,7 @@ const MENU: MenuDef[] = [
   { href: "/academics/timetable", label: "Jadwal pelajaran", group: "Akademik", icon: "timetable", permission: "classes:read", keywords: "jadwal benturan terbit" },
   { href: "/academics/grading", label: "Skema nilai", group: "Akademik", icon: "chart", permission: "grading:read", keywords: "bobot komponen nilai kktp capaian pembelajaran rapor" },
   { href: "/academics/grade-recap", label: "Rekap nilai sekolah", group: "Akademik", icon: "chart", permission: "grading:read" },
+  { href: "/academics/report-progress", label: "Progres rapor", group: "Akademik", icon: "chart", permission: "grading:read", keywords: "rapor rombel kelengkapan baca" },
   { href: "/academics/report-review", label: "Peninjauan rapor", group: "Akademik", icon: "chart", permission: "report-cards:approve" },
   { href: "/academics/setup", label: "Pengaturan akademik", group: "Akademik", icon: "settings", permission: "classes:read", keywords: "tingkat program jurusan mapel mata pelajaran jam pelajaran penugasan guru" },
   { href: "/admin/students", label: "Siswa", group: "Data induk", icon: "students", permission: "people:read", keywords: "murid nis nisn" },

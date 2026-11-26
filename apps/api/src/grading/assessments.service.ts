@@ -337,8 +337,15 @@ export class AssessmentsService {
         select: { studentId: true, student: { select: { nis: true, person: { select: { fullName: true } } } } },
       });
       const students = new Map(roster.map((row) => [row.studentId, row.student]));
-      const invalid = inputs.findIndex((input) => !students.has(input.studentId));
-      if (invalid >= 0) throw new NotFoundException(`Baris ${invalid + 1}: siswa tidak ditemukan dalam rombel pada tanggal penilaian.`);
+      // FR-13.6: isian massal melaporkan galat untuk setiap baris, bukan hanya baris pertama.
+      const invalid = inputs.flatMap((input, index) => (students.has(input.studentId) ? [] : [index]));
+      if (invalid.length && inputs.length === 1) throw new NotFoundException('Siswa tidak ditemukan dalam rombel pada tanggal penilaian.');
+      if (invalid.length) {
+        throw validationFailed(
+          `${invalid.length} baris berisi siswa yang tidak ada dalam rombel pada tanggal penilaian: baris ${invalid.map((i) => i + 1).join(', ')}. Tidak ada nilai yang disimpan.`,
+          Object.fromEntries(invalid.map((i) => [`rows.${i}.studentId`, [`Baris ${i + 1}: siswa tidak ditemukan dalam rombel pada tanggal penilaian.`]])),
+        );
+      }
       const existing = await tx.gradeEntry.findMany({ where: { assessmentId: id, studentId: { in: ids } } });
       const byStudent = new Map(existing.map((row) => [row.studentId, row]));
       const stale = inputs.flatMap((input, index) => (byStudent.get(input.studentId)?.versionNo ?? 0) === input.versionNo
@@ -375,13 +382,17 @@ export class AssessmentsService {
       });
       const studentIds = [...new Set(roster.map((r) => r.studentId))];
       if (!studentIds.length) throw conflict('Tidak ada siswa pada tanggal penilaian.');
+      // PRD R2: penilaian boleh terbit walau masih ada nilai kosong; nilai akhir siswa itu berstatus "belum lengkap"
+      // (tidak dianggap nol). Baris "belum dinilai" dibuat untuk peserta tanpa isian agar tetap tampil di lembar terbit.
       const entries = await tx.gradeEntry.findMany({ where: { assessmentId: id, studentId: { in: studentIds } }, select: { studentId: true, state: true } });
-      const resolved = new Set(entries.filter((e) => e.state !== 'PENDING').map((e) => e.studentId));
-      if (resolved.size !== studentIds.length) throw conflict(`Masih ada ${studentIds.length - resolved.size} siswa yang belum dinilai.`);
+      const withEntry = new Set(entries.map((e) => e.studentId));
+      const missing = studentIds.filter((studentId) => !withEntry.has(studentId));
+      if (missing.length) await tx.gradeEntry.createMany({ data: missing.map((studentId) => ({ assessmentId: id, studentId, state: 'PENDING' as const, versionNo: 1, updatedById: auth.userId })) });
+      const pending = entries.filter((e) => e.state === 'PENDING').length + missing.length;
       const excluded = await tx.gradeEntry.deleteMany({ where: { assessmentId: id, studentId: { notIn: studentIds } } });
       const result = await tx.assessment.updateMany({ where: { id, schoolId: auth.schoolId, status: 'DRAFT' }, data: { status: 'PUBLISHED', assessedOn: assessment.assessedOn ?? toDbDate(date), publishedAt: new Date(), publishedById: auth.userId } });
       if (result.count !== 1) throw conflict('Penilaian sudah diterbitkan. Muat ulang halaman.');
-      await this.audit.record({ schoolId: auth.schoolId, actorUserId: auth.userId, action: 'assessment.publish', entityType: 'assessment', entityId: id, requestId: meta.requestId, metadata: { studentCount: studentIds.length, excludedDraftCount: excluded.count } }, tx);
+      await this.audit.record({ schoolId: auth.schoolId, actorUserId: auth.userId, action: 'assessment.publish', entityType: 'assessment', entityId: id, requestId: meta.requestId, metadata: { studentCount: studentIds.length, pendingCount: pending, excludedDraftCount: excluded.count } }, tx);
       await this.notifyPublication(tx, auth.schoolId, id, studentIds, 'grades');
     });
   }

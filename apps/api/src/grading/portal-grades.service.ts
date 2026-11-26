@@ -43,12 +43,12 @@ export class PortalGradesService {
       const { component, teachingAssignment } = entries[0]!.assessment;
       const scheme = component.schemeVersion;
       if (scheme.roundingRule !== 'HALF_UP_INTEGER') return [];
-      const { finalScore, status } = aggregateGrade(scheme.components.map((item) => ({
+      const { finalScore, status, needsFollowUp } = aggregateGrade(scheme.components.map((item) => ({
         ...item, entries: entries.filter((entry) => entry.assessment.component.id === item.id),
       })), scheme.passingScore);
       return [{
         key, subject: teachingAssignment.subject.name, classCode: teachingAssignment.classGroup.code, term: teachingAssignment.term.name,
-        academicYear: teachingAssignment.term.academicYear.name, versionNo: scheme.versionNo, finalScore, status,
+        academicYear: teachingAssignment.term.academicYear.name, versionNo: scheme.versionNo, finalScore, status, passingScore: scheme.passingScore, needsFollowUp,
       }];
     });
     return {

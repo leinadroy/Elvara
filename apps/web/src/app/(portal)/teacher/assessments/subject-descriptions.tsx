@@ -1,6 +1,6 @@
 import { ApiErrorState, EmptyState } from "@/components/page-states";
 import { apiGet } from "@/lib/api-server";
-import { DescriptionForm } from "./description-form";
+import { DescriptionForm, type LearningOutcomeOption } from "./description-form";
 
 type StudentDescription = {
   studentId: string;
@@ -11,7 +11,10 @@ type StudentDescription = {
 };
 
 export async function SubjectDescriptions({ assignmentId }: { assignmentId: string }) {
-  const result = await apiGet<StudentDescription[]>(`/report-cards/subject-descriptions?teachingAssignmentId=${encodeURIComponent(assignmentId)}`);
+  const [result, outcomes] = await Promise.all([
+    apiGet<StudentDescription[]>(`/report-cards/subject-descriptions?teachingAssignmentId=${encodeURIComponent(assignmentId)}`),
+    apiGet<LearningOutcomeOption[]>(`/report-cards/subject-outcomes?teachingAssignmentId=${encodeURIComponent(assignmentId)}`),
+  ]);
   if (!result.ok) return <ApiErrorState status={result.status} error={result.error} />;
   if (!result.data.length) return <EmptyState title="Belum ada siswa dalam rombel ini" />;
   return <div className="grid gap-2">
@@ -24,7 +27,7 @@ export async function SubjectDescriptions({ assignmentId }: { assignmentId: stri
         <div className="mt-3">
           {student.editable
             ? <DescriptionForm assignmentId={assignmentId} studentId={student.studentId}
-                highestAchievement={highestAchievement ?? null} needsImprovement={needsImprovement ?? null} />
+                highestAchievement={highestAchievement ?? null} needsImprovement={needsImprovement ?? null} outcomes={outcomes.ok ? outcomes.data : []} />
             : <div className="space-y-2">
                 <p className="text-muted-foreground">Deskripsi hanya dapat dilihat pada tahap ini.</p>
                 <p className="whitespace-pre-wrap">Capaian tertinggi: {highestAchievement ?? "—"}</p>

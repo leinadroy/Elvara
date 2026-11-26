@@ -19,7 +19,10 @@ export async function PortalGrades({ studentId }: { studentId?: string }) {
                   <p className="font-medium">{summary.subject}</p>
                   <p className="text-xs text-muted-foreground">{summary.classCode} · {summary.academicYear} · {summary.term} · Skema versi {summary.versionNo}</p>
                 </div>
-                <p>{summary.status === "INCOMPLETE" ? "Belum lengkap" : summary.status === "EXCUSED" ? "Tidak berlaku" : summary.finalScore}</p>
+                <div className="text-right">
+                  <p className={summary.needsFollowUp ? "font-semibold text-primary" : ""}>{summary.status === "INCOMPLETE" ? "Belum lengkap" : summary.status === "EXCUSED" ? "Tidak berlaku" : summary.finalScore}</p>
+                  {summary.needsFollowUp && <p className="text-xs font-medium text-primary">Perlu tindak lanjut · di bawah KKTP {summary.passingScore}</p>}
+                </div>
               </li>
             ))}
           </ul>

@@ -125,7 +125,7 @@ Guru mengelola tugas dan nilai **berdasarkan data** (penugasan mengajarnya), wal
 
 ## 5. Tabel (blueprint bagian C)
 
-`academic_calendar_event`, `grade_scheme_version`, `grade_component`, `learning_outcome`, `learning_activity`, `submission`, `submission_version`, `assessment`, `grade_entry`, `grade_change`, `report_card`, `report_card_subject` (nilai dan deskripsi per mapel sebelum terbit), `report_card_version`. Rincian kolom ditambahkan ke [model data](r0-data-model.md) saat dibangun.
+`academic_calendar_event`, `grade_scheme_version`, `grade_component`, `learning_outcome`, `learning_activity`, `submission`, `submission_version`, `assessment`, `grade_entry`, `grade_change`, `report_card`, `report_card_subject` (nilai dan deskripsi per mapel sebelum terbit), `report_card_version`. Rincian kolom ada di [model data](r0-data-model.md#r2-akademik-13-tabel).
 
 ## 6. Urutan pembangunan
 

@@ -58,9 +58,9 @@ async function CurriculumWork() {
       <p className="text-xs text-muted-foreground">Kombinasi mata pelajaran dan tingkat yang diajar tanpa skema terbit · Sumber: penugasan dan skema nilai</p>
       <p className="text-xs text-muted-foreground">{data.term.name} · {formatDateTime(data.generatedAt)}</p>
     </Card>
-    <Card title="Progres rapor per rombel" className="lg:col-span-2">
+    <Card title="Progres rapor per rombel" className="lg:col-span-2" action={<Link className="text-xs underline" href="/academics/report-progress">Semua rombel</Link>}>
       {data.groups.length ? <ul className="divide-y text-sm">{data.groups.map(({ id, code, total, counts }) => <li key={id} className="py-2">
-        <p className="font-medium">{code} · {counts.PUBLISHED}/{total} terbit</p>
+        <Link href={`/academics/report-progress/${id}?termId=${data.term.id}`} className="font-medium hover:underline">{code} · {counts.PUBLISHED}/{total} terbit</Link>
         <p className="text-muted-foreground">{counts.SUBMITTED} diajukan · {counts.DRAFT} draf · {counts.RETURNED} dikembalikan · {counts.NOT_STARTED} belum dimulai</p>
       </li>)}</ul> : <p className="text-sm text-muted-foreground">Belum ada rombel pada semester berjalan.</p>}
       <p className="mt-2 text-xs text-muted-foreground">Status rapor peserta aktif pada {data.term.name} · Sumber: penempatan siswa dan rapor · {formatDateTime(data.generatedAt)}</p>

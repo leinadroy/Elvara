@@ -12,7 +12,7 @@ export function PublishedGradeRow({ assessmentId, row }: { assessmentId: string;
   const router = useRouter();
   const form = useApiForm();
   const [open, setOpen] = useState(false);
-  const [state, setState] = useState<GradeState>(row.state);
+  const [state, setState] = useState<GradeState>(row.state === "PENDING" ? "SCORED" : row.state);
   const [score, setScore] = useState(row.score === null ? "" : String(row.score));
   const [feedback, setFeedback] = useState(row.feedback ?? "");
   const [reason, setReason] = useState("");
@@ -29,7 +29,7 @@ export function PublishedGradeRow({ assessmentId, row }: { assessmentId: string;
       <div><p className="font-medium">{row.fullName}</p><p className="text-xs text-muted-foreground">NIS {row.nis}</p></div>
       <div className="text-right"><p>{GRADE_STATE_LABELS[row.state]}{row.state === "SCORED" ? ` · ${row.score}` : row.state === "MISSING" ? " · dihitung 0" : ""}</p>{row.feedback && <p className="mt-1 text-muted-foreground">{row.feedback}</p>}</div>
     </div>
-    <Button type="button" variant="ghost" size="sm" className="mt-2" aria-expanded={open} onClick={() => { setOpen(!open); if (!open) void loadHistory(); }}>{open ? "Tutup koreksi" : "Koreksi / riwayat"}</Button>
+    <Button type="button" variant="ghost" size="sm" className="mt-2" aria-expanded={open} onClick={() => { setOpen(!open); if (!open) void loadHistory(); }}>{open ? "Tutup koreksi" : row.state === "PENDING" ? "Isi nilai / riwayat" : "Koreksi / riwayat"}</Button>
     {open && <div className="mt-3 grid gap-4 border-t pt-4 lg:grid-cols-2">
       <form className="grid gap-3" onSubmit={async (event) => {
         event.preventDefault();
